@@ -1,57 +1,102 @@
-import React from 'react';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Link, Tabs } from 'expo-router';
-import { Pressable } from 'react-native';
+import { Tabs, router, usePathname } from "expo-router";
+import { View, Pressable } from "react-native";
+import { SymbolView } from "expo-symbols";
 
-import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+export default function TabsLayout() {
+  const pathname = usePathname();
 
-// You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
-function TabBarIcon(props: {
-  name: React.ComponentProps<typeof FontAwesome>['name'];
-  color: string;
-}) {
-  return <FontAwesome size={28} style={{ marginBottom: -3 }} {...props} />;
-}
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const isHomeActive =
+    pathname === "/home" || pathname?.startsWith("/recipe/");
+  const isProfileActive = pathname?.startsWith("/profile");
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
-      }}>
+        headerShown: false,
+        tabBarShowLabel: false,
+        tabBarStyle: {
+          height: 88,
+          backgroundColor: "#000",
+          borderTopWidth: 0,
+        },
+        tabBarItemStyle: {
+          marginTop: 10,
+        },
+      }}
+    >
+      {/* Search / Home */}
       <Tabs.Screen
-        name="index"
+        name="home"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
-          headerRight: () => (
-            <Link href="/modal" asChild>
-              <Pressable>
-                {({ pressed }) => (
-                  <FontAwesome
-                    name="info-circle"
-                    size={25}
-                    color={Colors[colorScheme ?? 'light'].text}
-                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
+          tabBarButton: (props) => (
+            <Pressable
+              onPress={props.onPress}
+              style={{
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <SymbolView
+                name="magnifyingglass"
+                size={26}
+                tintColor={isHomeActive ? "#FFF" : "#6B6B6B"}
+              />
+            </Pressable>
           ),
         }}
       />
+
+      {/* Center + Ask */}
       <Tabs.Screen
-        name="two"
+        name="index"
         options={{
-          title: 'You',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
+          tabBarButton: () => (
+            <Pressable
+              onPress={() => router.push("/ask")}
+              style={{
+                width: 72,
+                height: 44,
+                borderRadius: 22,
+                backgroundColor: "#6CD401",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 12,
+              }}
+            >
+              <SymbolView
+                name="plus"
+                size={24}
+                tintColor="#FFF"
+              />
+            </Pressable>
+          ),
+        }}
+        listeners={{
+          tabPress: (e) => e.preventDefault(),
+        }}
+      />
+
+      {/* Profile / Chat */}
+      <Tabs.Screen
+        name="profile"
+        options={{
+          tabBarButton: (props) => (
+            <Pressable
+              onPress={props.onPress}
+              style={{
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <SymbolView
+                name="magnifyingglass"
+                size={26}
+                tintColor={isProfileActive ? "#FFF" : "#6B6B6B"}
+              />
+            </Pressable>
+          ),
         }}
       />
     </Tabs>
