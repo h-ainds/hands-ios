@@ -2,11 +2,16 @@ export interface Recipe {
   id: number
   title: string
   image: string | null
-  ingredients?: string[]
-  instructions?: string[]
-  prep_time?: number
-  cook_time?: number
-  servings?: number
-  created_at?: string
-  user_id?: string
+  caption: string | null
+  steps: string[] | null
+  tags: string[] | null
+  created_at: string
+  updated_at: string
+  searchable_title: string | null
+  user_id?: string | null
+  url: string | null
+  ingredients: {
+    Ingredients?: string[]
+    [key: string]: string[] | undefined
+  } | null
 }
