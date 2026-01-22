@@ -1,12 +1,11 @@
 import "./global.css"
-import { Text, View } from "react-native";
- 
-export default function App() {
+import { Stack } from 'expo-router'
+
+export default function RootLayout() {
   return (
-    <View className="flex-1 items-center justify-center bg-white">
-      <Text className="text-xl font-bold text-primary-muted">
-        Welcome to Nativewind!
-      </Text>
-    </View>
-  );
+    <Stack>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="recipe/[id]" options={{ title: 'Recipe' }} />
+    </Stack>
+  )
 }

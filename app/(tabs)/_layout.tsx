@@ -79,7 +79,7 @@ export default function TabsLayout() {
 
       {/* Profile / Chat */}
       <Tabs.Screen
-        name="profile"
+        name="you"
         options={{
           tabBarButton: (props) => (
             <Pressable
