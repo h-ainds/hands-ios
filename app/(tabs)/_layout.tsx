@@ -38,9 +38,9 @@ export default function TabsLayout() {
               }}
             >
               <SymbolView
-                name="magnifyingglass"
+                name="house.fill"
                 size={26}
-                tintColor={isHomeActive ? "#FFF" : "#6B6B6B"}
+                tintColor={isHomeActive ? "#FFFFFF" : "#9F9F9F"}
               />
             </Pressable>
           ),
@@ -91,9 +91,9 @@ export default function TabsLayout() {
               }}
             >
               <SymbolView
-                name="magnifyingglass"
+                name="person.circle.fill"
                 size={26}
-                tintColor={isProfileActive ? "#FFF" : "#6B6B6B"}
+                tintColor={isProfileActive ? "#FFFFFF" : "9F9F9F"}
               />
             </Pressable>
           ),
