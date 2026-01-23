@@ -1,5 +1,5 @@
 import { FlatList, Image, Pressable, ActivityIndicator, ScrollView } from 'react-native'
-import { Text, View } from '@/components/Themed'
+import { Text, View } from 'react-native'
 import { useRecipes } from '@/hooks/useRecipes'
 import { useRouter } from 'expo-router'
 import type { Recipe } from '@/types'
@@ -114,7 +114,7 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* Composer Fixed at Bottom */}
-      <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200">
+      <View className="absolute bottom-4 left-0 right-0">
         <Composer />
       </View>
     </View>

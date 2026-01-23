@@ -1,5 +1,5 @@
 import { StyleSheet, ScrollView, Image, ActivityIndicator } from 'react-native'
-import { Text, View } from '@/components/Themed'
+import { Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
