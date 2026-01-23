@@ -1,8 +1,9 @@
-import { StyleSheet, FlatList, Image, Pressable, ActivityIndicator } from 'react-native'
+import { FlatList, Image, Pressable, ActivityIndicator, ScrollView } from 'react-native'
 import { Text, View } from '@/components/Themed'
 import { useRecipes } from '@/hooks/useRecipes'
 import { useRouter } from 'expo-router'
 import type { Recipe } from '@/types'
+import Composer from '@/components/Composer'
 
 export default function HomeScreen() {
   const { recipes, loading, error } = useRecipes()
@@ -10,7 +11,7 @@ export default function HomeScreen() {
 
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View className="flex-1 bg-white justify-center items-center">
         <ActivityIndicator size="large" />
       </View>
     )
@@ -18,82 +19,104 @@ export default function HomeScreen() {
 
   if (error) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.error}>Error: {error}</Text>
+      <View className="flex-1 bg-white justify-center items-center">
+        <Text className="text-red-500 text-base">{error}</Text>
       </View>
     )
   }
 
-  const renderRecipe = ({ item }: { item: Recipe }) => (
-    <Pressable
-      style={styles.recipeCard}
-      onPress={() => router.push(`/recipe/${item.id}`)}
-    >
-      {item.image && (
-        <Image 
-          source={{ uri: item.image }} 
-          style={styles.recipeImage}
-        />
-      )}
-      <Text style={styles.recipeTitle}>{item.title}</Text>
-    </Pressable>
-  )
+  // Featured/Our Picks recipes (first 5)
+  const featuredRecipes = recipes.slice(0, 5)
+  // Recent recipes (rest)
+  const recentRecipes = recipes.slice(5)
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>My Recipes</Text>
-      <FlatList
-        data={recipes}
-        renderItem={renderRecipe}
-        keyExtractor={(item) => item.id.toString()}
-        numColumns={2}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <Text style={styles.empty}>No recipes yet</Text>
-        }
-      />
+    <View className="flex-1 bg-white">
+      <ScrollView className="flex-1" contentContainerClassName="pb-20">
+        {/* Hero Section */}
+        <View className="w-full h-[54vh] bg-gray-200 justify-center items-center">
+          <Text className="text-2xl font-bold">Hero</Text>
+          <Text className="text-gray-600">Placeholder for hero content</Text>
+        </View>
+
+        {/* Recent Recipes Section */}
+        <View className="py-2">
+          <Text className="text-[28px] font-bold tracking-tight mb-2 px-4">
+            Recents
+          </Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            className="px-4 pb-4"
+            contentContainerClassName="gap-2"
+          >
+            {featuredRecipes && featuredRecipes.length > 0 ? (
+              featuredRecipes.map((recipe: Recipe) => (
+                <Pressable
+                  key={recipe.id}
+                  className="w-48"
+                  onPress={() => router.push(`/recipe/${recipe.id}`)}
+                >
+                  <View className="bg-gray-100 rounded-xl overflow-hidden">
+                    {recipe.image && (
+                      <Image 
+                        source={{ uri: recipe.image }} 
+                        className="w-full h-32"
+                      />
+                    )}
+                    <Text className="p-3 text-base font-semibold" numberOfLines={2}>
+                      {recipe.title}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))
+            ) : (
+              <Text className="text-gray-400 text-base">No featured recipes</Text>
+            )}
+          </ScrollView>
+        </View>
+
+        {/* Recents Section */}
+        <View className="py-2">
+          <Text className="text-[28px] font-bold tracking-tight mb-2 px-4">
+            Recent Recipes
+          </Text>
+          <View className="px-2">
+            {recentRecipes && recentRecipes.length > 0 ? (
+              <View className="flex-row flex-wrap">
+                {recentRecipes.map((recipe: Recipe) => (
+                  <Pressable
+                    key={recipe.id}
+                    className="w-1/2 p-2"
+                    onPress={() => router.push(`/recipe/${recipe.id}`)}
+                  >
+                    <View className="bg-gray-100 rounded-xl overflow-hidden">
+                      {recipe.image && (
+                        <Image 
+                          source={{ uri: recipe.image }} 
+                          className="w-full h-36"
+                        />
+                      )}
+                      <Text className="p-3 text-base font-semibold" numberOfLines={2}>
+                        {recipe.title}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <Text className="text-center text-gray-400 text-base mt-12">
+                No recipes yet
+              </Text>
+            )}
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Composer Fixed at Bottom */}
+      <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200">
+        <Composer />
+      </View>
     </View>
   )
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    padding: 16,
-  },
-  list: {
-    padding: 8,
-  },
-  recipeCard: {
-    flex: 1,
-    margin: 8,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  recipeImage: {
-    width: '100%',
-    height: 150,
-    backgroundColor: '#ddd',
-  },
-  recipeTitle: {
-    padding: 12,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  error: {
-    color: 'red',
-    fontSize: 16,
-  },
-  empty: {
-    textAlign: 'center',
-    marginTop: 50,
-    fontSize: 16,
-    color: '#999',
-  },
-})
