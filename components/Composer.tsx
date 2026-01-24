@@ -1,7 +1,12 @@
 import React from "react"
 import { View, TextInput, Text, Pressable } from "react-native"
 
-const Composer = () => {
+type ComposerProps = {
+  onAskPress?: () => void
+  onSearchPress?: () => void
+}
+
+const Composer = ({ onAskPress, onSearchPress }: ComposerProps) => {
   return (
     <View className="flex-row items-center px-4">
       {/* Left Action Button */}
@@ -12,17 +17,19 @@ const Composer = () => {
         <Text className="text-white text-xs font-medium">you</Text>
       </Pressable>
 
-      {/* Center Input */}
-      <View className="flex-1">
+      {/* Center Input (pill) */}
+      <Pressable className="flex-1" onPress={onAskPress}>
         <TextInput
+          pointerEvents="none"
           placeholder="Ask"
           placeholderTextColor="#8E8E93"
           className="h-11 rounded-full bg-secondary px-4 text-base text-black"
         />
-      </View>
+      </Pressable>
 
       {/* Right Action Button */}
       <Pressable
+        onPress={onSearchPress}
         className="h-11 w-11 rounded-full bg-blue-500 items-center justify-center"
         style={{ marginLeft: 10 }}
       >

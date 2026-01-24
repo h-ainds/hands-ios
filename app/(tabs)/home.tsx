@@ -1,4 +1,4 @@
-import { FlatList, Image, Pressable, ActivityIndicator, ScrollView } from 'react-native'
+import { Image, Pressable, ActivityIndicator, ScrollView } from 'react-native'
 import { Text, View } from 'react-native'
 import { useRecipes } from '@/hooks/useRecipes'
 import { useRouter } from 'expo-router'
@@ -29,6 +29,14 @@ export default function HomeScreen() {
   const featuredRecipes = recipes.slice(0, 5)
   // Recent recipes (rest)
   const recentRecipes = recipes.slice(5)
+
+  const handleAskPress = () => {
+    router.push('/ask')
+  }
+
+  const handleSearchPress = () => {
+    router.push('/search')
+  }
 
   return (
     <View className="flex-1 bg-white">
@@ -115,7 +123,10 @@ export default function HomeScreen() {
 
       {/* Composer Fixed at Bottom */}
       <View className="absolute bottom-4 left-0 right-0">
-        <Composer />
+        <Composer 
+          onAskPress={handleAskPress}
+          onSearchPress={handleSearchPress}
+        />
       </View>
     </View>
   )
