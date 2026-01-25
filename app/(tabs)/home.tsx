@@ -4,6 +4,8 @@ import { useRecipes } from '@/hooks/useRecipes'
 import { useRouter } from 'expo-router'
 import type { Recipe } from '@/types'
 import Composer from '@/components/Composer'
+import RecipeCard from '@/components/RecipeCard'
+
 
 export default function HomeScreen() {
   const { recipes, loading, error } = useRecipes()
@@ -26,7 +28,7 @@ export default function HomeScreen() {
   }
 
   // Featured/Our Picks recipes (first 5)
-  const featuredRecipes = recipes.slice(0, 5)
+  const featuredRecipes = recipes.slice(0, 9)
   // Recent recipes (rest)
   const recentRecipes = recipes.slice(5)
 
@@ -48,77 +50,65 @@ export default function HomeScreen() {
         </View>
 
         {/* Recent Recipes Section */}
-        <View className="py-2">
-          <Text className="text-[28px] font-bold tracking-tight mb-2 px-4">
-            Recents
-          </Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            className="px-4 pb-4"
-            contentContainerClassName="gap-2"
-          >
-            {featuredRecipes && featuredRecipes.length > 0 ? (
-              featuredRecipes.map((recipe: Recipe) => (
-                <Pressable
-                  key={recipe.id}
-                  className="w-48"
-                  onPress={() => router.push(`/recipe/${recipe.id}`)}
-                >
-                  <View className="bg-gray-100 rounded-xl overflow-hidden">
-                    {recipe.image && (
-                      <Image 
-                        source={{ uri: recipe.image }} 
-                        className="w-full h-32"
-                      />
-                    )}
-                    <Text className="p-3 text-base font-semibold" numberOfLines={2}>
-                      {recipe.title}
-                    </Text>
-                  </View>
-                </Pressable>
-              ))
-            ) : (
-              <Text className="text-gray-400 text-base">No featured recipes</Text>
-            )}
-          </ScrollView>
-        </View>
+        <View className="py-4">
+        <Text className="text-[28px] font-bold tracking-tight mb-2 px-4">
+        Recents
+        </Text>
 
-        {/* Recents Section */}
-        <View className="py-2">
-          <Text className="text-[28px] font-bold tracking-tight mb-2 px-4">
-            Recent Recipes
-          </Text>
-          <View className="px-2">
-            {recentRecipes && recentRecipes.length > 0 ? (
-              <View className="flex-row flex-wrap">
-                {recentRecipes.map((recipe: Recipe) => (
-                  <Pressable
-                    key={recipe.id}
-                    className="w-1/2 p-2"
-                    onPress={() => router.push(`/recipe/${recipe.id}`)}
-                  >
-                    <View className="bg-gray-100 rounded-xl overflow-hidden">
-                      {recipe.image && (
-                        <Image 
-                          source={{ uri: recipe.image }} 
-                          className="w-full h-36"
-                        />
-                      )}
-                      <Text className="p-3 text-base font-semibold" numberOfLines={2}>
-                        {recipe.title}
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))}
-              </View>
-            ) : (
-              <Text className="text-center text-gray-400 text-base mt-12">
-                No recipes yet
-              </Text>
-            )}
-          </View>
+       <ScrollView
+       horizontal
+       showsHorizontalScrollIndicator={false}
+       className="px-4 pb-4"
+    contentContainerClassName="gap-3">
+    {featuredRecipes && featuredRecipes.length > 0 ? (
+      featuredRecipes.map((recipe: Recipe) => (
+        <View key={recipe.id} className="w-30">
+          <RecipeCard
+            title={recipe.title}
+            image={recipe.image ?? undefined}
+            cardType="vertical"
+            rounded="xl"
+            onPress={() => router.push(`/recipe/${recipe.id}`)}
+          />
         </View>
+      ))
+    ) : (
+      <Text className="text-gray-400 text-base">
+        No featured recipes
+      </Text>
+    )}
+  </ScrollView>
+</View>
+
+
+{/* Recents Section */}
+<View className="py-2">
+  <Text className="text-[28px] font-bold tracking-tight mb-2 px-4">
+    Recent Recipes
+  </Text>
+
+  <View className="px-2">
+    {recentRecipes && recentRecipes.length > 0 ? (
+      <View className="flex-row flex-wrap">
+        {recentRecipes.map((recipe: Recipe) => (
+          <View key={recipe.id} className="w-30 p-4">
+            <RecipeCard
+              title={recipe.title}
+              image={recipe.image ?? undefined}
+              cardType="vertical"
+              rounded="xl"
+              onPress={() => router.push(`/recipe/${recipe.id}`)}
+            />
+          </View>
+        ))}
+      </View>
+    ) : (
+      <Text className="text-center text-gray-400 text-base mt-12">
+        No recipes yet
+      </Text>
+    )}
+  </View>
+</View>
       </ScrollView>
 
       {/* Composer Fixed at Bottom */}

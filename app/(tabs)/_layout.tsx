@@ -4,11 +4,9 @@ import { SymbolView } from "expo-symbols";
 
 export default function TabsLayout() {
   const pathname = usePathname();
-
   const isHomeActive =
     pathname === "/home" || pathname?.startsWith("/recipe/");
-  const isProfileActive = pathname?.startsWith("/profile");
-
+    const isProfileActive = pathname?.startsWith("/you");
   return (
     <Tabs
       screenOptions={{
@@ -16,11 +14,11 @@ export default function TabsLayout() {
         tabBarShowLabel: false,
         tabBarStyle: {
           height: 88,
-          backgroundColor: "#000",
+          backgroundColor: "#FFF",
           borderTopWidth: 0,
         },
         tabBarItemStyle: {
-          marginTop: 10,
+          justifyContent: "center",
         },
       }}
     >
@@ -40,7 +38,7 @@ export default function TabsLayout() {
               <SymbolView
                 name="house.fill"
                 size={26}
-                tintColor={isHomeActive ? "#FFFFFF" : "#9F9F9F"}
+                tintColor={isHomeActive ? "#000" : "#9F9F9F"}
               />
             </Pressable>
           ),
@@ -52,24 +50,31 @@ export default function TabsLayout() {
         name="index"
         options={{
           tabBarButton: () => (
-            <Pressable
-              onPress={() => router.push("/ask")}
+            <View
               style={{
-                width: 72,
-                height: 44,
-                borderRadius: 22,
-                backgroundColor: "#6CD401",
+                flex: 1,
                 alignItems: "center",
                 justifyContent: "center",
-                marginBottom: 12,
               }}
             >
-              <SymbolView
-                name="plus"
-                size={24}
-                tintColor="#FFF"
-              />
-            </Pressable>
+              <Pressable
+                onPress={() => router.push("/ask")}
+                style={{
+                  width: 48,
+                  height: 36,
+                  borderRadius: 22,
+                  backgroundColor: "#6CD401",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <SymbolView
+                  name="plus"
+                  size={20}
+                  tintColor="#FFFFFF"
+                />
+              </Pressable>
+            </View>
           ),
         }}
         listeners={{
@@ -77,7 +82,7 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* Profile / Chat */}
+      {/* Profile */}
       <Tabs.Screen
         name="you"
         options={{
@@ -93,7 +98,7 @@ export default function TabsLayout() {
               <SymbolView
                 name="person.circle.fill"
                 size={26}
-                tintColor={isProfileActive ? "#FFFFFF" : "9F9F9F"}
+                tintColor={isProfileActive ? "#000000" : "#9F9F9F"}
               />
             </Pressable>
           ),
