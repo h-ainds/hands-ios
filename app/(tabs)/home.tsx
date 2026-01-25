@@ -112,7 +112,7 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* Composer Fixed at Bottom */}
-      <View className="absolute bottom-4 left-0 right-0">
+      <View className="absolute flex-row items-center bottom-4">
         <Composer 
           onAskPress={handleAskPress}
           onSearchPress={handleSearchPress}
