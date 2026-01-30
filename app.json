@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "hands-ios",
+    "name": "Hands",
     "slug": "hands-ios",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -14,15 +14,12 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "bundleIdentifier": "com.handsai.hands",
+      "buildNumber": "1",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "web": {
       "bundler": "metro",
@@ -34,6 +31,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9be26852-c10d-4c49-9ea8-70ee0c06621f"
+      }
+    },
+    "owner": "hands-ai"
   }
 }
