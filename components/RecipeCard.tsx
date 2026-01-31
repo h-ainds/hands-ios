@@ -7,7 +7,7 @@ interface RecipeCardProps {
   title: string;
   image?: string;
   cardType?: 'vertical' | 'square' | 'horizontal';
-  rounded?: 'lg' | 'xl' | '2xl';
+  rounded?: 'none' | 'lg' | 'xl' | '2xl';
   backgroundColor?: string;
   showActionButton?: boolean;
   onPress?: () => void;
@@ -52,6 +52,8 @@ export default function RecipeCard({
   // Get rounded classes
   const getRoundedClass = () => {
     switch (rounded) {
+      case 'none':
+        return 'rounded-none';
       case 'lg':
         return 'rounded-lg';
       case 'xl':
@@ -61,7 +63,7 @@ export default function RecipeCard({
       default:
         return 'rounded-xl';
     }
-  };
+  };  
 
   // Get title text classes based on cardType
   const getTitleClasses = () => {
