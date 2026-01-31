@@ -75,28 +75,28 @@ export default function HomeScreen() {
       contentContainerClassName="pb-20">
       
       {/* Hero Section */}
-        <View className="w-full h-[54vh]">
-          {heroLoading ? (
-            <View className="flex-1 bg-gray-200 justify-center items-center">
-              <ActivityIndicator size="large" />
-            </View>
-          ) : heroRecipe ? (
-            <RecipeCard
-              title={heroRecipe.title}
-              image={heroRecipe.image ?? undefined}
-              cardType="square"
-              rounded="none"
-              onPress={() => router.push(`/recipe/${heroRecipe.id}`)}
-            />
-          ) : (
-            <View className="flex-1 bg-gray-200 justify-center items-center">
-              <Text className="text-gray-600">No hero recipe available</Text>
-            </View>
-          )}
-        </View>
+      <View className="w-full">
+  {heroLoading ? (
+    <View className="h-[54vh] bg-gray-200 justify-center items-center">
+      <ActivityIndicator size="large" />
+    </View>
+  ) : heroRecipe ? (
+    <RecipeCard
+      title={heroRecipe.title}
+      image={heroRecipe.image ?? undefined}
+      cardType="square"
+      rounded="none"
+      onPress={() => router.push(`/recipe/${heroRecipe.id}`)}
+    />
+  ) : (
+    <View className="h-[54vh] bg-gray-200 justify-center items-center">
+      <Text className="text-gray-600">No recipe available</Text>
+    </View>
+  )}
+</View>
 
         {/* Recent Recipes Section */}
-        <View className="py-1">
+        <View className="py-5">
           <Text className="text-[28px] font-bold tracking-tight mb-2 px-4">
             Recents
           </Text>

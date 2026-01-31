@@ -68,20 +68,24 @@ export default function RecipeCard({
   // Get title text classes based on cardType
   const getTitleClasses = () => {
     switch (cardType) {
+      case 'vertical':
+        return 'text-lg font-bold tracking-tighter';
       case 'square':
         return 'text-[28px] font-extrabold leading-[30px] tracking-[-0.04em]';
       case 'horizontal':
         return 'text-base font-bold tracking-tight';
       default:
-        return 'text-lg font-bold';
+        return 'text-lg font-bold tracking-tight';
     }
   };
 
   // Get title padding based on cardType
   const getTitlePadding = () => {
     switch (cardType) {
+      case 'vertical':
+        return 'px-3 py-3';
       case 'square':
-        return 'px-4 py-5';
+        return 'px-6 py-5';
       case 'horizontal':
         return 'px-3 py-3';
       default:
@@ -124,7 +128,7 @@ export default function RecipeCard({
     start={{ x: 0.5, y: 1 }}
     end={{ x: 0.5, y: 0 }}
     className={`w-full ${titlePadding}`}
-  >
+    >
     <Text
       className={`text-white leading-tight ${titleClasses}`}
       numberOfLines={2}
