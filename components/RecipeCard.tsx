@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, Image, Pressable } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 
 interface RecipeCardProps {
@@ -100,30 +101,37 @@ export default function RecipeCard({
     ? require('../assets/placeholder.png') 
     : { uri: image };
 
-  return (
-    <Pressable
-      onPress={onPress}
-      className={`${containerClasses} ${roundedClass} ${backgroundColor} overflow-hidden relative`}
+    return (
+      <Pressable
+        onPress={onPress}
+        className={`${containerClasses} ${roundedClass} ${backgroundColor} overflow-hidden relative`}
+      >
+        {/* Image - fills entire card */}
+        <Image
+          source={imageSource}
+          className="absolute inset-0 w-full h-full"
+          resizeMode="cover"
+          onError={() => setImageError(true)}
+        />
+        
+        {/* Title Container with Gradient Overlay */}
+        <View className="absolute inset-0 flex justify-end">
+        <View className="absolute inset-0 flex justify-end">
+  <LinearGradient
+    colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']}
+    start={{ x: 0.5, y: 1 }}
+    end={{ x: 0.5, y: 0 }}
+    className={`w-full ${titlePadding}`}
+  >
+    <Text
+      className={`text-white leading-tight ${titleClasses}`}
+      numberOfLines={2}
     >
-      {/* Image - fills entire card */}
-      <Image
-        source={imageSource}
-        className="absolute inset-0 w-full h-full"
-        resizeMode="cover"
-        onError={() => setImageError(true)}
-      />
-
-      {/* Dark Overlay for Text Readability */}
-      <View className="absolute inset-0 bg-black/30" />
-
-      {/* Title Container */}
-      <View className="absolute inset-0 flex justify-end">
-        <View className={`w-full bg-gradient-to-t from-black/70 to-transparent ${titlePadding}`}>
-          <Text className={`text-white leading-tight ${titleClasses}`} numberOfLines={2}>
-            {title}
-          </Text>
-        </View>
-      </View>
+      {title}
+    </Text>
+  </LinearGradient>
+ </View>
+</View>
 
       {/* Action Button */}
       {showActionButton && (
