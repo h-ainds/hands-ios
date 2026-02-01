@@ -69,9 +69,9 @@ export default function RecipeCard({
   const getTitleClasses = () => {
     switch (cardType) {
       case 'vertical':
-        return 'text-lg font-bold tracking-tighter';
+        return 'text-lg font-bold tracking-tighter leading-tight';
       case 'square':
-        return 'text-[28px] font-extrabold leading-[30px] tracking-[-0.04em]';
+        return 'text-base font-extrabold leading-tight tracking-tighter';
       case 'horizontal':
         return 'text-base font-bold tracking-tight';
       default:
@@ -122,7 +122,6 @@ export default function RecipeCard({
         
         {/* Title Container with Gradient Overlay */}
         <View className="absolute inset-0 flex justify-end">
-        <View className="absolute inset-0 flex justify-end">
   <LinearGradient
     colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']}
     start={{ x: 0.5, y: 1 }}
@@ -130,14 +129,13 @@ export default function RecipeCard({
     className={`w-full ${titlePadding}`}
     >
     <Text
-      className={`text-white leading-tight ${titleClasses}`}
+      className={`text-white ${titleClasses}`}
       numberOfLines={2}
     >
       {title}
     </Text>
   </LinearGradient>
  </View>
-</View>
 
       {/* Action Button */}
       {showActionButton && (

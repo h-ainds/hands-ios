@@ -72,6 +72,7 @@ export default function TabsLayout() {
                   name="plus"
                   size={20}
                   tintColor="#FFFFFF"
+                  weight="semibold"
                 />
               </Pressable>
             </View>

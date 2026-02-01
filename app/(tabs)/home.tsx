@@ -77,19 +77,26 @@ export default function HomeScreen() {
       {/* Hero Section */}
       <View className="w-full">
   {heroLoading ? (
-    <View className="h-[54vh] bg-gray-200 justify-center items-center">
+    <View className="h-[56vh] bg-gray-200 justify-center items-center">
       <ActivityIndicator size="large" />
     </View>
   ) : heroRecipe ? (
-    <RecipeCard
-      title={heroRecipe.title}
-      image={heroRecipe.image ?? undefined}
-      cardType="square"
-      rounded="none"
-      onPress={() => router.push(`/recipe/${heroRecipe.id}`)}
-    />
+    <Pressable onPress={() => router.push(`/recipe/${heroRecipe.id}`)}>
+      <View className="relative">
+        <Image
+          source={{ uri: heroRecipe.image ?? undefined }}
+          className="w-full h-[56vh]"
+          resizeMode="cover"
+        />
+        <View className="absolute bottom-0 p-4">
+          <Text className="text-3xl text-white font-extrabold tracking-tighter leading-none">
+            {heroRecipe.title}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
   ) : (
-    <View className="h-[54vh] bg-gray-200 justify-center items-center">
+    <View className="h-[56vh] bg-gray-200 justify-center items-center">
       <Text className="text-gray-600">No recipe available</Text>
     </View>
   )}
@@ -97,24 +104,23 @@ export default function HomeScreen() {
 
         {/* Recent Recipes Section */}
         <View className="py-5">
-          <Text className="text-[28px] font-bold tracking-tight mb-2 px-4">
+          <Text className="text-2xl font-bold tracking-tight mb-2 px-4">
             Recents
           </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             className="px-4 pb-4"
-            contentContainerClassName="gap-3">
+            contentContainerClassName="gap-2.5">
             {featuredRecipes && featuredRecipes.length > 0 ? (
               featuredRecipes.map((recipe: Recipe) => (
-                <View key={recipe.id} className="w-30">
+                <View key={recipe.id}>
                   <RecipeCard
                     title={recipe.title}
                     image={recipe.image ?? undefined}
                     cardType="vertical"
                     rounded="xl"
-                    onPress={() => router.push(`/recipe/${recipe.id}`)}
-                  />
+                    onPress={() => router.push(`/recipe/${recipe.id}`)}/>
                 </View>
               ))
             ) : (
@@ -127,18 +133,17 @@ export default function HomeScreen() {
 
         {/* Our Picks Section - 3 Column Grid */}
         <View className="py-2">
-          <Text className="text-[28px] font-bold tracking-tight mb-2 px-4">
+          <Text className="text-2xl font-bold tracking-tight mb-2 px-4">
             Our Picks
           </Text>
-          <View className="px-4">
-  {recentRecipes && recentRecipes.length > 0 ? (
-    <View
-      style={{
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        marginHorizontal: -1, // GRID_GAP / 2
-      }}
-    >
+          <View className="px-0">
+            {recentRecipes && recentRecipes.length > 0 ? (
+             <View
+             style={{
+             flexDirection: 'row',
+             flexWrap: 'wrap',
+             marginHorizontal: -1, // GRID_GAP / 2px
+           }}>
       {recentRecipes.map((recipe: Recipe) => (
         <View
           key={recipe.id}

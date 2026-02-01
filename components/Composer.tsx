@@ -11,11 +11,11 @@ const Composer = ({ onAskPress, onSearchPress }: ComposerProps) => {
   return (
     <View className="flex-row items-center px-4">
       {/* Left Button - You */}
-      <Pressable className="rounded-full bg-rose-500 px-4 py-4 items-center justify-center mr-3">
+      <Pressable className="rounded-full bg-secondary px-4 py-4 items-center justify-center mr-3">
         <SymbolView
-          name="magnifyingglass"
+          name="person.fill"
           size={18}
-          tintColor="#FFFFFF"
+          tintColor="#9F9F9F"
         />
       </Pressable>
 
@@ -32,12 +32,12 @@ const Composer = ({ onAskPress, onSearchPress }: ComposerProps) => {
       {/* Right Button - Search */}
       <Pressable
         onPress={onSearchPress}
-        className="rounded-full bg-blue-500 px-4 py-4 items-center justify-center ml-3"
-      >
+        className="rounded-full bg-secondary px-4 py-4 items-center justify-center ml-3">
         <SymbolView
           name="magnifyingglass"
           size={18}
-          tintColor="#FFFFFF"
+          tintColor="#9F9F9F"
+          weight="semibold"
         />
       </Pressable>
     </View>
