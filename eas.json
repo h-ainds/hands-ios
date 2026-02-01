@@ -9,7 +9,8 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "ios": { "simulator": true }
     },
     "production": {
       "autoIncrement": true
@@ -18,4 +19,5 @@
   "submit": {
     "production": {}
   }
+  
 }
