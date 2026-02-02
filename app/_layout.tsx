@@ -46,7 +46,7 @@ function RootLayoutNav() {
       <Stack.Screen name="signup" options={{ headerShown: false }} />
       <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
       <Stack.Screen name="update-password" options={{ headerShown: false }} />
-      <Stack.Screen name="recipe/[id]" options={{ title: 'Recipe' }} />
+      <Stack.Screen name="recipe/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="ask" options={{ headerShown: false }} />
       <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
       <Stack.Screen name="search" options={{ headerShown: false }} />
