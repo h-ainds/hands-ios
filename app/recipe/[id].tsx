@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, Image, ActivityIndicator } from 'react-native'
+import { StyleSheet, ScrollView, Image, Pressable, ActivityIndicator } from 'react-native'
 import { Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router'
 import { useState, useEffect } from 'react'
@@ -9,6 +9,8 @@ export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams()
   const [recipe, setRecipe] = useState<Recipe | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isExpanded, setIsExpanded] = useState(false)
+
 
   useEffect(() => {
     loadRecipe()
@@ -59,9 +61,35 @@ export default function RecipeDetailScreen() {
       <View style={styles.content}>
         <Text style={styles.title}>{recipe.title}</Text>
         
-        {recipe.caption && (
-          <Text style={styles.caption}>{recipe.caption}</Text>
-        )}
+{/* Caption */}
+{recipe.caption ? (
+  <View className="relative mb-6">
+    <Text
+      className="text-[15px] text-secondary-placeholder leading-6"
+      numberOfLines={isExpanded ? undefined : 2}
+    >
+      {recipe.caption}
+    </Text>
+
+    <Pressable
+      onPress={() => setIsExpanded(!isExpanded)}
+      className="absolute bottom-0 right-0 pl-1"
+    >
+      {/* Gradient fade */}
+      {!isExpanded && (
+        <View className="absolute inset-0 bg-white opacity-1" />
+      )}
+
+      <Text className="text-[15px] font-medium text-secondary-active">
+        {isExpanded ? 'Less' : 'More'}
+      </Text>
+    </Pressable>
+  </View>
+) : (
+  <Text className="text-[15px] text-gray-400 mb-6 italic">
+    No caption provided.
+  </Text>
+)}
 
         {recipe.tags && recipe.tags.length > 0 && (
           <View style={styles.tagsContainer}>
