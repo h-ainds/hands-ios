@@ -1,29 +1,31 @@
-import React, { useState } from 'react';
-import { View, Text, Image, Pressable } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-
+import React, { useState } from 'react'
+import { View, Text, Image, Pressable } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
+import { useRouter } from 'expo-router'
 
 interface RecipeCardProps {
-  title: string;
-  image?: string;
-  cardType?: 'vertical' | 'square' | 'horizontal';
-  rounded?: 'none' | 'lg' | 'xl' | '2xl';
-  backgroundColor?: string;
-  showActionButton?: boolean;
-  onPress?: () => void;
+  id?: string
+  title: string
+  image?: string
+  cardType?: 'vertical' | 'square' | 'horizontal'
+  rounded?: 'lg' | 'xl' | '2xl'
+  backgroundColor?: string
+  showActionButton?: boolean
+  onPress?: () => void
 }
 
 // Plus Icon Component (using Text)
 const PlusIcon = () => (
   <Text className="text-black text-2xl font-bold">+</Text>
-);
+)
 
 // Check Icon Component (using Text)
 const CheckIcon = () => (
   <Text className="text-green-500 text-2xl font-bold">✓</Text>
-);
+)
 
 export default function RecipeCard({
+  id,
   title,
   image,
   cardType = 'vertical',
@@ -32,22 +34,23 @@ export default function RecipeCard({
   showActionButton = false,
   onPress,
 }: RecipeCardProps) {
-  const [isAdded, setIsAdded] = useState(false);
-  const [imageError, setImageError] = useState(false);
+  const router = useRouter()
+  const [isAdded, setIsAdded] = useState(false)
+  const [imageError, setImageError] = useState(false)
 
   // Get container classes based on cardType
   const getContainerClasses = () => {
     switch (cardType) {
       case 'vertical':
-        return 'w-36 aspect-[1/2]';
+        return 'w-36 aspect-[1/2]'
       case 'square':
-        return 'w-full aspect-square';
+        return 'w-full aspect-square'
       case 'horizontal':
-        return 'w-full h-24 flex-row';
+        return 'w-full h-24 flex-row'
       default:
-        return 'w-36 aspect-[1/2]';
+        return 'w-36 aspect-[1/2]'
     }
-  };
+  }
 
   // Get rounded classes
   const getRoundedClass = () => {
@@ -55,15 +58,15 @@ export default function RecipeCard({
       case 'none':
         return 'rounded-none';
       case 'lg':
-        return 'rounded-lg';
+        return 'rounded-lg'
       case 'xl':
-        return 'rounded-xl';
+        return 'rounded-xl'
       case '2xl':
-        return 'rounded-2xl';
+        return 'rounded-2xl'
       default:
-        return 'rounded-xl';
+        return 'rounded-xl'
     }
-  };  
+  }
 
   // Get title text classes based on cardType
   const getTitleClasses = () => {
@@ -73,11 +76,11 @@ export default function RecipeCard({
       case 'square':
         return 'text-base font-extrabold leading-tight tracking-tighter';
       case 'horizontal':
-        return 'text-base font-bold tracking-tight';
+        return 'text-base font-bold tracking-tight'
       default:
         return 'text-lg font-bold tracking-tight';
     }
-  };
+  }
 
   // Get title padding based on cardType
   const getTitlePadding = () => {
@@ -85,27 +88,37 @@ export default function RecipeCard({
       case 'vertical':
         return 'px-3 py-3';
       case 'square':
-        return 'px-6 py-5';
+        return 'px-4 py-5'
       case 'horizontal':
-        return 'px-3 py-3';
+        return 'px-3 py-3'
       default:
-        return 'px-3 py-3';
+        return 'px-3 py-3'
     }
-  };
+  }
 
   const handleActionPress = () => {
-    setIsAdded(!isAdded);
-  };
+    setIsAdded(!isAdded)
+  }
 
-  const containerClasses = getContainerClasses();
-  const roundedClass = getRoundedClass();
-  const titleClasses = getTitleClasses();
-  const titlePadding = getTitlePadding();
+  const handleCardPress = () => {
+    if (onPress) {
+      onPress()
+    } else if (id) {
+      // Navigate to recipe detail page
+      router.push(`/recipe/${id}`)
+    }
+  }
+
+  const containerClasses = getContainerClasses()
+  const roundedClass = getRoundedClass()
+  const titleClasses = getTitleClasses()
+  const titlePadding = getTitlePadding()
 
   // Handle placeholder image
-  const imageSource = imageError || !image 
-    ? require('../assets/placeholder.png') 
-    : { uri: image };
+  const imageSource =
+    imageError || !image
+      ? require('../assets/placeholder.png')
+      : { uri: image }
 
     return (
       <Pressable
@@ -151,5 +164,5 @@ export default function RecipeCard({
         </Pressable>
       )}
     </Pressable>
-  );
+  )
 }
