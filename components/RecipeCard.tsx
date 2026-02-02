@@ -8,7 +8,7 @@ interface RecipeCardProps {
   title: string
   image?: string
   cardType?: 'vertical' | 'square' | 'horizontal'
-  rounded?: 'lg' | 'xl' | '2xl'
+  rounded?: 'lg' | 'xl' | '2xl'| 'none'
   backgroundColor?: string
   showActionButton?: boolean
   onPress?: () => void

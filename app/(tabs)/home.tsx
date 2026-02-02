@@ -2,17 +2,21 @@ import { Image, Pressable, ActivityIndicator, ScrollView } from 'react-native'
 import { Text, View } from 'react-native'
 import { useRecipes } from '@/hooks/useRecipes'
 import { useRouter } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import type { Recipe } from '@/types'
 import Composer from '@/components/Composer'
 import RecipeCard from '@/components/RecipeCard'
 import { supabase } from '@/lib/supabase/client'
+import { useAuth } from '@/context/AuthContext'
 
 export default function HomeScreen() {
   const { recipes, loading, error } = useRecipes()
   const router = useRouter()
+  const { user } = useAuth()
   const [heroRecipe, setHeroRecipe] = useState<Recipe | null>(null)
   const [heroLoading, setHeroLoading] = useState(true)
+  const [recentRecipes, setRecentRecipes] = useState<Recipe[]>([])
+  const [recentLoading, setRecentLoading] = useState(true)
 
   // Fetch random hero recipe
   useEffect(() => {
@@ -40,6 +44,51 @@ export default function HomeScreen() {
     fetchHeroRecipe()
   }, [])
 
+  // Load user's recent recipes
+  const loadRecentRecipes = useCallback(async () => {
+    if (!user) {
+      setRecentLoading(false)
+      return
+    }
+
+    try {
+      console.log('Loading recent recipes for user:', user.id.substring(0, 8) + '...')
+      
+      const { data: recent, error } = await supabase
+        .rpc('get_recent_recipes', {
+          user_id_param: user.id,
+          limit_param: 9
+        })
+
+      if (error) {
+        console.error('Error fetching recent recipes:', error)
+        console.error('Error details:', JSON.stringify(error, null, 2))
+        return
+      }
+
+      console.log('Recent recipes loaded:', recent?.length || 0)
+      if (recent && recent.length > 0) {
+        console.log('Recent recipes data:', recent?.slice(0, 3).map((r: any) => ({ 
+          id: r.id, 
+          title: r.title?.substring(0, 30) + '...', 
+          viewed_at: r.viewed_at 
+        })))
+      }
+      
+      // Set data directly without additional frontend processing
+      setRecentRecipes(recent as Recipe[] || [])
+    } catch (error) {
+      console.error('Error in loadRecentRecipes:', error)
+    } finally {
+      setRecentLoading(false)
+    }
+  }, [user])
+
+  // Load recent recipes when user changes
+  useEffect(() => {
+    loadRecentRecipes()
+  }, [loadRecentRecipes])
+
   if (loading) {
     return (
       <View className="flex-1 bg-white justify-center items-center">
@@ -56,10 +105,8 @@ export default function HomeScreen() {
     )
   }
 
-  // Featured/Our Picks recipes (first 5)
-  const featuredRecipes = recipes.slice(0, 9)
-  // Recent recipes (rest)
-  const recentRecipes = recipes.slice(5)
+  // Our Picks recipes (use all recipes for grid)
+  const ourPicksRecipes = recipes.slice(9)
 
   const handleAskPress = () => {
     router.push('/ask')
@@ -107,28 +154,34 @@ export default function HomeScreen() {
           <Text className="text-2xl font-bold tracking-tight mb-2 px-4">
             Recents
           </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            className="px-4 pb-4"
-            contentContainerClassName="gap-2.5">
-            {featuredRecipes && featuredRecipes.length > 0 ? (
-              featuredRecipes.map((recipe: Recipe) => (
-                <View key={recipe.id}>
-                  <RecipeCard
-                    title={recipe.title}
-                    image={recipe.image ?? undefined}
-                    cardType="vertical"
-                    rounded="xl"
-                    onPress={() => router.push(`/recipe/${recipe.id}`)}/>
-                </View>
-              ))
-            ) : (
-              <Text className="text-gray-400 text-base">
-                No featured recipes
-              </Text>
-            )}
-          </ScrollView>
+          {recentLoading ? (
+            <View className="px-4 py-8">
+              <ActivityIndicator size="small" />
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              className="px-4 pb-4"
+              contentContainerClassName="gap-2.5">
+              {recentRecipes && recentRecipes.length > 0 ? (
+                recentRecipes.slice(0, 10).map((recipe: Recipe) => (
+                  <View key={recipe.id}>
+                    <RecipeCard
+                      title={recipe.title}
+                      image={recipe.image ?? undefined}
+                      cardType="vertical"
+                      rounded="xl"
+                      onPress={() => router.push(`/recipe/${recipe.id}`)}/>
+                  </View>
+                ))
+              ) : (
+                <Text className="text-gray-400 text-base">
+                  {user ? 'No recent recipes yet' : 'Sign in to see recent recipes'}
+                </Text>
+              )}
+            </ScrollView>
+          )}
         </View>
 
         {/* Our Picks Section - 3 Column Grid */}
@@ -137,14 +190,14 @@ export default function HomeScreen() {
             Our Picks
           </Text>
           <View className="px-0">
-            {recentRecipes && recentRecipes.length > 0 ? (
+            {ourPicksRecipes && ourPicksRecipes.length > 0 ? (
              <View
              style={{
              flexDirection: 'row',
              flexWrap: 'wrap',
              marginHorizontal: -1, // GRID_GAP / 2px
            }}>
-      {recentRecipes.map((recipe: Recipe) => (
+      {ourPicksRecipes.map((recipe: Recipe) => (
         <View
           key={recipe.id}
           style={{
