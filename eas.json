@@ -8,22 +8,31 @@
       "developmentClient": true,
       "distribution": "internal"
     },
-
     "ios-simulator": {
       "extends": "development",
       "ios": { 
-        "simulator": true }
+        "simulator": true 
+      }
     },
     "preview": {
       "distribution": "internal",
-      "ios": { "simulator": true }
+      "ios": { 
+        "simulator": true 
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://lxueztdlrxoystjehjay.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx4dWV6dGRscnhveXN0amVoamF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1NDk5MTYsImV4cCI6MjA3MjEyNTkxNn0.5XEG1f0_8vcwkEWvqSBTWcJmMlW_nUxWkC5eNhSzouo"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://lxueztdlrxoystjehjay.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx4dWV6dGRscnhveXN0amVoamF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1NDk5MTYsImV4cCI6MjA3MjEyNTkxNn0.5XEG1f0_8vcwkEWvqSBTWcJmMlW_nUxWkC5eNhSzouo"
+      }
     }
   },
   "submit": {
     "production": {}
   }
-  
 }
