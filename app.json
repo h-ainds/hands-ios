@@ -38,6 +38,9 @@
         "projectId": "9be26852-c10d-4c49-9ea8-70ee0c06621f"
       }
     },
-    "owner": "hands-ai"
+    "owner": "hands-ai",
+    "android": {
+      "package": "com.handsai.hands"
+    }
   }
 }
