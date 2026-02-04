@@ -96,3 +96,6 @@ android/**/gradle-wrapper.jar
 supabase/.branches
 supabase/.temp
 .supabase
+ios/
+android/
+.expo/
