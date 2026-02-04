@@ -14,15 +14,11 @@ import { useRouter, Link } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
 import { signIn, resendVerificationEmail, getResendCooldownTime, checkOnboardingStatus } from '@/lib/auth'
-import { signInWithGoogle } from '@/lib/auth-oauth'
-import { supabase } from '@/lib/supabase/client'
-
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [oauthLoading, setOauthLoading] = useState(false)
   const [showEmailVerification, setShowEmailVerification] = useState(false)
   const [resendCooldown, setResendCooldown] = useState(0)
   const [resendLoading, setResendLoading] = useState(false)
@@ -118,31 +114,6 @@ export default function LoginScreen() {
     }
   }
 
-  const handleGoogleSignIn = async () => {
-    setOauthLoading(true)
-    try {
-      const result = await signInWithGoogle()
-      
-      if (result.success) {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          const onboardingStatus = await checkOnboardingStatus(user.id)
-          if (onboardingStatus.needsOnboarding) {
-            router.replace('/onboarding-profile')
-            return
-          }
-        }
-        router.replace('/(tabs)/home')
-      } else {
-        Alert.alert('Error', result.error || 'Failed to sign in with Google')
-      }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to sign in with Google')
-    } finally {
-      setOauthLoading(false)
-    }
-  }
-
   return (
     <SafeAreaView className="flex-1 bg-white">
       <KeyboardAvoidingView
@@ -172,36 +143,7 @@ export default function LoginScreen() {
               </Text>
             </View>
 
-            {/* Google Sign In Button */}
-            <TouchableOpacity
-              onPress={handleGoogleSignIn}
-              disabled={oauthLoading || loading}
-              className="w-full bg-white border-2 border-gray-200 py-3.5 rounded-full mt-8 items-center justify-center flex-row"
-              style={{ opacity: oauthLoading || loading ? 0.5 : 1 }}
-            >
-              {oauthLoading ? (
-                <>
-                  <ActivityIndicator color="#000" size="small" />
-                  <Text className="text-black text-lg font-medium ml-2">
-                    Signing in...
-                  </Text>
-                </>
-              ) : (
-                <Text className="text-black text-lg font-medium">
-                  Continue with Google
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            {/* Divider */}
-            <View className="flex-row items-center my-6">
-              <View className="flex-1 h-px bg-gray-200" />
-              <Text className="mx-4 text-black/40 text-sm">or</Text>
-              <View className="flex-1 h-px bg-gray-200" />
-            </View>
-
             {/* Form */}
-
             <View className="mt-8 space-y-4">
               <TextInput
                 placeholder="Email"
@@ -211,7 +153,7 @@ export default function LoginScreen() {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
-                editable={!loading && !oauthLoading}
+                editable={!loading}
                 className="w-full px-4 py-3.5 rounded-2xl bg-[#F7F7F7] text-black text-lg"
               />
 
@@ -222,7 +164,7 @@ export default function LoginScreen() {
                 onChangeText={setPassword}
                 secureTextEntry
                 autoCapitalize="none"
-                editable={!loading && !oauthLoading}
+                editable={!loading}
                 className="w-full px-4 py-3.5 rounded-2xl bg-[#F7F7F7] text-black text-lg mt-4"
               />
             </View>
@@ -230,9 +172,9 @@ export default function LoginScreen() {
             {/* Login Button */}
             <TouchableOpacity
               onPress={handleSignIn}
-              disabled={loading || oauthLoading}
+              disabled={loading}
               className="w-full bg-primary py-3.5 rounded-full mt-6 items-center justify-center flex-row"
-              style={{ opacity: loading || oauthLoading ? 0.5 : 1 }}
+              style={{ opacity: loading ? 0.5 : 1 }}
             >
               {loading ? (
                 <>
