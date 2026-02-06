@@ -14,7 +14,7 @@ import { useRouter, Link } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
 import { signIn, resendVerificationEmail, getResendCooldownTime, checkOnboardingStatus } from '@/lib/auth'
-import { signInWithGoogle } from '@/lib/auth-oauth'
+import { signInWithGoogle, signInWithApple} from '@/lib/auth-oauth'
 import { supabase } from '@/lib/supabase/client'
 
 
@@ -143,6 +143,31 @@ export default function LoginScreen() {
     }
   }
 
+  const handleAppleSignIn = async () => {
+    setOauthLoading(true)
+    try {
+      const result = await signInWithApple()
+  
+      if (result.success) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const onboardingStatus = await checkOnboardingStatus(user.id)
+          if (onboardingStatus.needsOnboarding) {
+            router.replace('/onboarding-profile')
+            return
+          }
+        }
+        router.replace('/(tabs)/home')
+      } else {
+        Alert.alert('Error', result.error || 'Failed to sign in with Apple')
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to sign in with Apple')
+    } finally {
+      setOauthLoading(false)
+    }
+  }
+  
   return (
     <SafeAreaView className="flex-1 bg-white">
       <KeyboardAvoidingView
@@ -156,7 +181,10 @@ export default function LoginScreen() {
           <View className="flex-1 px-6 pt-6">
             {/* Back Button */}
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={() => {
+                if (router.canGoBack()) router.back()
+                else router.replace('/login') // or '/(tabs)/home' if you prefer
+              }}
               className="w-10 h-10 rounded-full items-center justify-center"
             >
               <SymbolView name="chevron.left" size={24} tintColor="#000000" />
@@ -189,6 +217,27 @@ export default function LoginScreen() {
               ) : (
                 <Text className="text-black text-lg font-medium">
                   Continue with Google
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Apple Sign In Button */}
+            <TouchableOpacity
+              onPress={handleAppleSignIn}
+              disabled={oauthLoading || loading}
+              className="w-full bg-black py-3.5 rounded-full mt-4 items-center justify-center flex-row"
+              style={{ opacity: oauthLoading || loading ? 0.5 : 1 }}
+            >
+              {oauthLoading ? (
+                <>
+                  <ActivityIndicator color="#fff" size="small" />
+                  <Text className="text-white text-lg font-medium ml-2">
+                    Signing in...
+                  </Text>
+                </>
+              ) : (
+                <Text className="text-white text-lg font-medium">
+                  Continue with Apple
                 </Text>
               )}
             </TouchableOpacity>
