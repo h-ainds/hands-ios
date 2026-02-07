@@ -48,6 +48,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: createStorageAdapter(),
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    detectSessionInUrl: Platform.OS === 'web', // Enable for web, disable for mobile
   },
 })

@@ -129,7 +129,10 @@ export default function OnboardingProfileScreen() {
         >
           {/* Back Button */}
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => {
+              if (router.canGoBack()) router.back()
+              else router.replace('/(tabs)/home') // or '/login' depending on what you want
+            }}            
             className="w-10 h-10 rounded-full items-center justify-center"
           >
             <SymbolView name="chevron.left" size={24} tintColor="#00000099" />

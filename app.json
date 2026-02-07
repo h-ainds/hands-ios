@@ -21,13 +21,17 @@
         "ITSAppUsesNonExemptEncryption": false
       }
     },
+    "android": {
+      "package": "com.handsai.hands"
+    },
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
@@ -38,9 +42,6 @@
         "projectId": "9be26852-c10d-4c49-9ea8-70ee0c06621f"
       }
     },
-    "owner": "hands-ai",
-    "android": {
-      "package": "com.handsai.hands"
-    }
+    "owner": "hands-ai"
   }
 }
