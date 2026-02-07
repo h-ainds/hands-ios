@@ -1,5 +1,5 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.0"
+import "@supabase/functions-js/edge-runtime"
+import { createClient } from "@supabase/supabase-js"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -52,26 +52,6 @@ async function generateEmbedding(text: string, apiKey: string): Promise<number[]
   return data.data[0].embedding
 }
 
-function escapeXml(text: string): string {
-  if (!text) return ""
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;")
-}
-
-function formatResponseXml(text: string, recipes: Recipe[]): string {
-  let xml = `<text>${escapeXml(text)}</text>`
-
-  for (const recipe of recipes) {
-    xml += `<item><id>${recipe.id}</id><title>${escapeXml(recipe.title)}</title><caption>${escapeXml(recipe.caption || "")}</caption><image>${recipe.image || ""}</image></item>`
-  }
-
-  return xml
-}
-
 // Transform raw RPC response to Recipe format
 function transformRecipes(rows: MatchRecipeRow[]): Recipe[] {
   return rows.map(row => ({
@@ -82,18 +62,130 @@ function transformRecipes(rows: MatchRecipeRow[]): Recipe[] {
   }))
 }
 
-// SSE helper: Send data chunk
-// Important: Remove newlines from data to keep it on a single line for SSE parsing
-function sendSSE(controller: ReadableStreamDefaultController, data: string) {
-  const singleLineData = data.replace(/\n/g, ' ')
-  const chunk = `data: ${singleLineData}\n\n`
-  controller.enqueue(new TextEncoder().encode(chunk))
+// Build the system prompt with recipe context for RAG
+function buildSystemPrompt(recipes: Recipe[]): string {
+  if (recipes.length === 0) {
+    return `
+You are Hands, a cooking assistant.
+
+No recipes were found matching the user's request.
+
+Output EXACTLY this XML structure:
+
+<answer>
+  <text>
+    I couldn't find any recipes matching your request. Try describing what ingredients you have or what type of dish you're looking for.
+  </text>
+  <items>
+  </items>
+</answer>
+
+Rules:
+- Do not output anything outside XML
+`.trim()
+  }
+
+  const recipeContext = recipes
+    .map((r, i) => `${i + 1}. ${r.id} - ${r.title} — ${r.caption} - ${r.image}`)
+    .join("\n")
+
+  return `
+You are Hands, a cooking assistant.
+
+You MUST recommend recipes.
+Keep the your response UNDER 25 words.
+
+You MUST output between 1 and ${recipes.length} <item> elements.
+Each <item> MUST use a recipe from the list below.
+You MUST NOT invent recipes.
+
+Available recipes:
+${recipeContext}
+
+Output EXACTLY this XML structure:
+
+<answer>
+  <text>
+    One paragraph of helpful explanation.
+  </text>
+  <items>
+    ${recipes.map(() => `
+    <item>
+      <id></id>
+      <title></title>
+      <caption></caption>
+      <image></image>
+    </item>
+    `).join("")}
+  </items>
+</answer>
+
+Rules:
+- Do not omit <items>
+- Do not output empty <item>
+- Do not repeat recipes
+- Do not output anything outside XML
+`.trim()
 }
 
-// SSE helper: Send event
-function sendSSEEvent(controller: ReadableStreamDefaultController, event: string, data: string) {
-  const chunk = `event: ${event}\ndata: ${data}\n\n`
-  controller.enqueue(new TextEncoder().encode(chunk))
+// Stream chat completion from OpenAI
+async function streamChatCompletion(
+  controller: ReadableStreamDefaultController,
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string
+): Promise<void> {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`OpenAI Chat API error: ${error}`)
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error("No response body")
+  }
+
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    const chunk = decoder.decode(value)
+    const lines = chunk.split("\n").filter(line => line.startsWith("data: "))
+
+    for (const line of lines) {
+      const data = line.slice(6) // Remove "data: " prefix
+      if (data === "[DONE]") continue
+
+      try {
+        const parsed = JSON.parse(data)
+        const delta = parsed.choices?.[0]?.delta?.content
+        if (delta) {
+          controller.enqueue(encoder.encode(delta))
+        }
+      } catch {
+        // Skip malformed JSON chunks
+      }
+    }
+  }
 }
 
 Deno.serve(async (req) => {
@@ -150,20 +242,15 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Create SSE stream
+    // Create streaming response - return immediately to prevent EarlyDrop
+    // All async work happens inside the stream
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Send initial status
-          sendSSEEvent(controller, "status", "searching")
-
           // Generate embedding for the user's prompt
           const embedding = await generateEmbedding(prompt, openaiKey)
 
-          // Send embedding complete status
-          sendSSEEvent(controller, "status", "matching")
-
-          // Call the match_recipes RPC function
+          // Call the match_recipes RPC function (RAG retrieval step)
           const { data: rawRecipes, error: rpcError } = await supabaseAdmin.rpc("match_recipes", {
             query_embedding: embedding,
             match_count: 4,
@@ -177,43 +264,27 @@ Deno.serve(async (req) => {
           // Transform the raw response to our Recipe format
           const recipes = transformRecipes(rawRecipes || [])
 
-          // Generate response text
-          let responseText: string
-          if (recipes && recipes.length > 0) {
-            responseText = `I found ${recipes.length} recipe${recipes.length > 1 ? "s" : ""} that match your request!`
-          } else {
-            responseText = "I couldn't find any recipes matching your request. Try describing what ingredients you have or what type of dish you're looking for."
-          }
+          // Build system prompt with retrieved recipes as context
+          const systemPrompt = buildSystemPrompt(recipes)
 
-          // Send the complete XML response
-          const xmlResponse = formatResponseXml(responseText, recipes)
-
-          // Stream the response (simulate streaming by sending in chunks for future use)
-          sendSSE(controller, xmlResponse)
-
-          // Send completion event
-          sendSSEEvent(controller, "done", "complete")
-
+          // Stream the LLM response
+          await streamChatCompletion(controller, openaiKey, systemPrompt, prompt)
           controller.close()
         } catch (error) {
           console.error("Streaming error:", error)
-
-          const errorXml = `<text>Sorry, I encountered an error while searching for recipes. Please try again.</text>`
-          sendSSEEvent(controller, "error", errorXml)
-
+          const encoder = new TextEncoder()
+          controller.enqueue(encoder.encode(`<answer><text>Sorry, I encountered an error. Please try again.</text><items></items></answer>`))
           controller.close()
         }
       },
     })
 
-    // Return SSE stream with proper headers
     return new Response(stream, {
       headers: {
         ...corsHeaders,
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
-        "X-Accel-Buffering": "no", // Disable nginx buffering
       },
     })
   } catch (error) {
