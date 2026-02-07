@@ -80,7 +80,7 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
     }
   }, [typingDelay])
 
-  // Send message and handle SSE streaming response
+  // Send message and handle streaming response
   const sendMessage = useCallback(async (message: string) => {
     if (!message.trim()) return
 
@@ -129,12 +129,12 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
 
       const functionUrl = `${supabaseUrl}/functions/v1/stream`
 
-      // Make POST request to SSE endpoint
+      // Make POST request to streaming endpoint
       const response = await fetch(functionUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'text/event-stream',
+          'Accept': 'text/plain',
           'apikey': anonKey,
           'Authorization': `Bearer ${session?.access_token || anonKey}`,
         },
@@ -151,50 +151,14 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
         setStatus('streaming')
       }
 
-      // Read SSE stream as text (React Native compatible)
-      const text = await response.text()
+      // Read stream as text (React Native compatible)
+      const fullResponse = await response.text()
 
       clearTimeout(timeoutId)
 
       if (!isMountedRef.current) return
 
-      // Parse SSE format manually
-      let fullResponse = ''
-      const lines = text.split('\n')
-      let currentEvent = 'message'
-      let currentData = ''
-
-      console.log('[SSE] Raw response text (first 500 chars):', text.substring(0, 500))
-
-      for (const line of lines) {
-        if (line.startsWith('event:')) {
-          currentEvent = line.slice(6).trim()
-        } else if (line.startsWith('data:')) {
-          currentData = line.slice(5).trim()
-        } else if (line === '' && currentData) {
-          // Empty line signals end of message
-          if (currentEvent === 'status') {
-            // Handle status events (searching, matching, etc.)
-            console.log(`[SSE] Status: ${currentData}`)
-          } else if (currentEvent === 'error') {
-            // Handle error events
-            throw new Error(currentData)
-          } else if (currentEvent === 'done') {
-            // Stream complete
-            console.log('[SSE] Stream complete')
-          } else {
-            // Regular data message - accumulate response
-            console.log('[SSE] Accumulating data chunk:', currentData.substring(0, 100))
-            fullResponse += currentData
-          }
-
-          // Reset for next message
-          currentEvent = 'message'
-          currentData = ''
-        }
-      }
-
-      console.log('[SSE] Final accumulated response:', fullResponse)
+      console.log('[Stream] Response (first 500 chars):', fullResponse.substring(0, 500))
 
       if (!isMountedRef.current) return
 
@@ -203,7 +167,7 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
       }
 
       // Parse the XML response
-      console.log('[useRecipeChat] Full SSE response:', fullResponse)
+      console.log('[useRecipeChat] Full response:', fullResponse)
       const parsed = parseAnswerXml(fullResponse)
       console.log('[useRecipeChat] Parsed XML:', JSON.stringify(parsed, null, 2))
       let assistantMessageIndex = -1

@@ -38,7 +38,7 @@ export async function signUp({ email, password, firstName, username }: SignUpDat
       email,
       password,
       options: {
-        // emailRedirectTo: 'handsios://auth-callback' // Uncomment to enable email verification
+      emailRedirectTo: 'handsios://auth-callback'
       }
     })
 
@@ -84,7 +84,7 @@ export async function signUp({ email, password, firstName, username }: SignUpDat
     return {
       user: data.user,
       session: data.session,
-      needsEmailVerification: false, // Email verification disabled (was: !data.session && data.user)
+      needsEmailVerification: false, // Email verification disabled - re-enable with: !data.session && data.user
       signupData: { firstName, username, email }
     }
   } catch (error: any) {

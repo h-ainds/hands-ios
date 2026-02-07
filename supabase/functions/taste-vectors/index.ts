@@ -1,8 +1,8 @@
 // Supabase Edge Function: taste-vectors
 // Generate taste preference vectors from user input text using OpenAI
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
+import { serve } from 'std/http/server'
+import { createClient } from '@supabase/supabase-js'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
