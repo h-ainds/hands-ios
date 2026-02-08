@@ -116,6 +116,10 @@ export default function HomeScreen() {
     router.push('/search')
   }
 
+  const handleYouPress = () => {
+    router.push('/you')
+  }
+
   return (
     <View className="flex-1 bg-white">
       <ScrollView className="flex-1" 
@@ -151,7 +155,7 @@ export default function HomeScreen() {
 
         {/* Recent Recipes Section */}
         <View className="py-5">
-          <Text className="text-2xl font-bold tracking-tight mb-2 px-4">
+          <Text className="text-2xl font-bold tracking-tighter mb-2 px-4">
             Recents
           </Text>
           {recentLoading ? (
@@ -186,7 +190,7 @@ export default function HomeScreen() {
 
         {/* Our Picks Section - 3 Column Grid */}
         <View className="py-2">
-          <Text className="text-2xl font-bold tracking-tight mb-2 px-4">
+          <Text className="text-2xl font-bold tracking-tighter mb-2 px-4">
             Our Picks
           </Text>
           <View className="px-0">
@@ -232,6 +236,7 @@ export default function HomeScreen() {
         <Composer 
           onAskPress={handleAskPress}
           onSearchPress={handleSearchPress}
+          onYouPress={handleYouPress}
         />
       </View>
     </View>

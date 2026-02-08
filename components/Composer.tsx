@@ -5,13 +5,17 @@ import { View, TextInput, Text, Pressable } from "react-native";
 type ComposerProps = {
   onAskPress?: () => void;
   onSearchPress?: () => void;
+  onYouPress?: () => void;
 };
 
-const Composer = ({ onAskPress, onSearchPress }: ComposerProps) => {
+const Composer = ({ onAskPress, onSearchPress, onYouPress }: ComposerProps) => {
   return (
     <View className="flex-row items-center px-4">
       {/* Left Button - You */}
-      <Pressable className="rounded-full bg-secondary px-4 py-4 items-center justify-center mr-3">
+      <Pressable 
+        onPress={onYouPress}
+        className="rounded-full bg-secondary px-4 py-4 items-center justify-center mr-3"
+      >
         <SymbolView
           name="person.fill"
           size={18}
@@ -32,7 +36,8 @@ const Composer = ({ onAskPress, onSearchPress }: ComposerProps) => {
       {/* Right Button - Search */}
       <Pressable
         onPress={onSearchPress}
-        className="rounded-full bg-secondary px-4 py-4 items-center justify-center ml-3">
+        className="rounded-full bg-secondary px-4 py-4 items-center justify-center ml-3"
+      >
         <SymbolView
           name="magnifyingglass"
           size={18}
