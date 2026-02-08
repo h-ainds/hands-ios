@@ -116,6 +116,10 @@ export default function HomeScreen() {
     router.push('/search')
   }
 
+  const handleYouPress = () => {
+    router.push('/you')
+  }
+
   return (
     <View className="flex-1 bg-white">
       <ScrollView className="flex-1" 
@@ -232,6 +236,7 @@ export default function HomeScreen() {
         <Composer 
           onAskPress={handleAskPress}
           onSearchPress={handleSearchPress}
+          onYouPress={handleYouPress}
         />
       </View>
     </View>

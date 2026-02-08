@@ -47,7 +47,7 @@ export default function ProfileScreen() {
   const email = user?.email || ''
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50">
+    <SafeAreaView className="flex-1 bg-white">
       <View className="p-4">
         {/* Avatar & Name */}
         <View className="items-center mb-8">
@@ -59,7 +59,7 @@ export default function ProfileScreen() {
             )}
           </View>
           <Text className="text-2xl font-bold text-black">{firstName}</Text>
-          <Text className="text-gray-400">{username} • {email}</Text>
+          <Text className="text-secondary-muted">{username} • {email}</Text>
         </View>
 
         {/* Logout Button */}

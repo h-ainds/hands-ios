@@ -193,10 +193,10 @@ export default function LoginScreen() {
             {/* Header */}
             <View className="mt-8">
               <Text className="text-3xl font-extrabold tracking-tight text-black">
-                Welcome back
+                Get started
               </Text>
-              <Text className="text-black/60 mt-1">
-                Enter your details to log in.
+              <Text className="text-secondary-muted leading-normal mt-1">
+              Log in or sign up
               </Text>
             </View>
 
