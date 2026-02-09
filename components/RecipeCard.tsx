@@ -68,7 +68,7 @@ export default function RecipeCard({
   const getTitleClasses = () => {
     switch (cardType) {
       case 'vertical':
-        return 'text-lg font-bold tracking-tighter leading-tight'
+        return 'text-base font-bold tracking-tighter leading-tighter'
       case 'square':
         return 'text-base font-extrabold leading-tight tracking-tighter'
       case 'horizontal':
@@ -81,7 +81,7 @@ export default function RecipeCard({
   const getTitlePadding = () => {
     switch (cardType) {
       case 'vertical':
-        return 'px-3 py-3'
+        return 'px-2 py-2'
       case 'square':
         return 'px-4 py-5'
       case 'horizontal':
@@ -132,21 +132,24 @@ export default function RecipeCard({
         onError={() => setImageError(true)}
       />
       
-      <View className="absolute inset-0 flex justify-end">
-        <LinearGradient
-          colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']}
-          start={{ x: 0.5, y: 1 }}
-          end={{ x: 0.5, y: 0 }}
-          className={`w-full ${titlePadding}`}
-        >
-          <Text
-            className={`text-white ${titleClasses}`}
-            numberOfLines={2}
-          >
-            {title}
-          </Text>
-        </LinearGradient>
-      </View>
+      <View className="absolute inset-0 justify-end">
+  <LinearGradient
+    colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']}
+    start={{ x: 0.5, y: 1 }}
+    end={{ x: 0.5, y: 0 }}
+    className="w-full"
+  >
+    <View className={titlePadding}>
+      <Text
+        className={`text-white ${titleClasses}`}
+        numberOfLines={2}
+      >
+        {title}
+      </Text>
+    </View>
+  </LinearGradient>
+</View>
+
 
       {showActionButton && (
         <Pressable

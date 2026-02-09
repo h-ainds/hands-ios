@@ -17,35 +17,36 @@ export default function HomeScreen() {
   const router = useRouter()
   const { user } = useAuth()
   const [heroRecipe, setHeroRecipe] = useState<Recipe | null>(null)
+  const [ourPicks, setOurPicks] = useState<Recipe[]>([])
   const [heroLoading, setHeroLoading] = useState(true)
   const [recentRecipes, setRecentRecipes] = useState<Recipe[]>([])
   const [recentLoading, setRecentLoading] = useState(true)
   const [isChatHistoryOpen, setIsChatHistoryOpen] = useState(false)
 
-  // Fetch random hero recipe
+  // Fetch random recipes for hero and our picks
   useEffect(() => {
-    async function fetchHeroRecipe() {
+    async function fetchRandomRecipes() {
       try {
-        const { data: featured, error } = await supabase
+        const { data, error } = await supabase
           .from('recipes')
           .select('*')
           .limit(500)
         
         if (error) throw error
         
-        if (featured && featured.length > 0) {
-          // Pick a random recipe
-          const randomIndex = Math.floor(Math.random() * featured.length)
-          setHeroRecipe(featured[randomIndex])
+        if (data && data.length > 0) {
+          const shuffled = [...data].sort(() => Math.random() - 0.5)
+          setHeroRecipe(shuffled[0])
+          setOurPicks(shuffled.slice(1, 10))
         }
       } catch (err) {
-        console.error('Error fetching hero recipe:', err)
+        console.error('Error fetching random recipes:', err)
       } finally {
         setHeroLoading(false)
       }
     }
 
-    fetchHeroRecipe()
+    fetchRandomRecipes()
   }, [])
 
   // Load user's recent recipes
@@ -79,7 +80,6 @@ export default function HomeScreen() {
         })))
       }
       
-      // Set data directly without additional frontend processing
       setRecentRecipes(recent as Recipe[] || [])
     } catch (error) {
       console.error('Error in loadRecentRecipes:', error)
@@ -88,7 +88,6 @@ export default function HomeScreen() {
     }
   }, [user])
 
-  // Load recent recipes when user changes
   useEffect(() => {
     loadRecentRecipes()
   }, [loadRecentRecipes])
@@ -118,9 +117,6 @@ export default function HomeScreen() {
     )
   }
 
-  // Our Picks recipes (use all recipes for grid)
-  const ourPicksRecipes = recipes.slice(9)
-
   const handleAskPress = () => {
     router.push('/ask')
   }
@@ -135,59 +131,58 @@ export default function HomeScreen() {
 
   return (
     <View className="flex-1 bg-white">
-    {/* Chat History Button - Top Left */}
-    <Pressable
-      onPress={() => setIsChatHistoryOpen(true)}
-      style={{
-        position: 'absolute',
-        top: 56,
-        left: 16,
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: 'white',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-      }}
-    >
-      <SymbolView name="text.alignleft" size={20} tintColor="#000000" />
-    </Pressable>
-      <ScrollView className="flex-1" 
-      contentContainerClassName="pb-20">
+      {/* Chat History Button - Top Left */}
+      <Pressable
+        onPress={() => setIsChatHistoryOpen(true)}
+        style={{
+          position: 'absolute',
+          top: 56,
+          left: 16,
+          width: 44,
+          height: 44,
+          borderRadius: 22,
+          backgroundColor: 'white',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          elevation: 3,
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 50,
+        }}
+      >
+        <SymbolView name="text.alignleft" size={20} tintColor="#000000" />
+      </Pressable>
       
-      {/* Hero Section */}
-      <View className="w-full">
-  {heroLoading ? (
-    <View className="h-[56vh] bg-gray-200 justify-center items-center">
-      <ActivityIndicator size="large" />
-    </View>
-  ) : heroRecipe ? (
-    <Pressable onPress={() => router.push(`/recipe/${heroRecipe.id}`)}>
-      <View className="relative">
-        <Image
-          source={{ uri: heroRecipe.image ?? undefined }}
-          className="w-full h-[56vh]"
-          resizeMode="cover"
-        />
-        <View className="absolute bottom-0 p-4">
-          <Text className="text-3xl text-white font-extrabold tracking-tighter leading-none">
-            {heroRecipe.title}
-          </Text>
+      <ScrollView className="flex-1" contentContainerClassName="pb-20">
+        {/* Hero Section */}
+        <View className="w-full">
+          {heroLoading ? (
+            <View className="h-[56vh] bg-gray-200 justify-center items-center">
+              <ActivityIndicator size="large" />
+            </View>
+          ) : heroRecipe ? (
+            <Pressable onPress={() => router.push(`/recipe/${heroRecipe.id}`)}>
+              <View className="relative">
+                <Image
+                  source={{ uri: heroRecipe.image ?? undefined }}
+                  className="w-full h-[56vh]"
+                  resizeMode="cover"
+                />
+                <View className="absolute bottom-0 p-4">
+                  <Text className="text-3xl text-white font-extrabold tracking-tighter leading-none">
+                    {heroRecipe.title}
+                  </Text>
+                </View>
+              </View>
+            </Pressable>
+          ) : (
+            <View className="h-[56vh] bg-gray-200 justify-center items-center">
+              <Text className="text-gray-600">No recipe available</Text>
+            </View>
+          )}
         </View>
-      </View>
-    </Pressable>
-  ) : (
-    <View className="h-[56vh] bg-gray-200 justify-center items-center">
-      <Text className="text-gray-600">No recipe available</Text>
-    </View>
-  )}
-</View>
 
         {/* Recent Recipes Section */}
         <View className="py-5">
@@ -224,46 +219,39 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Our Picks Section - 3 Column Grid */}
+        {/* Our Picks Section */}
         <View className="py-2">
           <Text className="text-2xl font-bold tracking-tighter mb-2 px-4">
             Our Picks
           </Text>
-          <View className="px-0">
-            {ourPicksRecipes && ourPicksRecipes.length > 0 ? (
-             <View
-             style={{
-             flexDirection: 'row',
-             flexWrap: 'wrap',
-             marginHorizontal: -1, // GRID_GAP / 2px
-           }}>
-      {ourPicksRecipes.map((recipe: Recipe) => (
-        <View
-          key={recipe.id}
-          style={{
-            flexBasis: '33.333%',
-            maxWidth: '33.333%',
-            paddingHorizontal: 1,
-            paddingBottom: 2,
-          }}
-        >
-          <RecipeCard
-            title={recipe.title}
-            image={recipe.image ?? undefined}
-            cardType="square"
-            rounded="none"
-            onPress={() => router.push(`/recipe/${recipe.id}`)}
-          />
-        </View>
-      ))}
-    </View>
-  ) : (
-    <Text className="text-center text-gray-400 text-base mt-12">
-      No recipes yet
-    </Text>
-  )}
-</View>
-
+          {heroLoading ? (
+            <View className="px-4 py-8">
+              <ActivityIndicator size="small" />
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              className="px-4 pb-4"
+              contentContainerClassName="gap-2.5">
+              {ourPicks.length > 0 ? (
+                ourPicks.map((recipe: Recipe) => (
+                  <View key={recipe.id}>
+                    <RecipeCard
+                      title={recipe.title}
+                      image={recipe.image ?? undefined}
+                      cardType="vertical"
+                      rounded="xl"
+                      onPress={() => router.push(`/recipe/${recipe.id}`)}/>
+                  </View>
+                ))
+              ) : (
+                <Text className="text-gray-400 text-base">
+                  No recipes yet
+                </Text>
+              )}
+            </ScrollView>
+          )}
         </View>
       </ScrollView>
 
@@ -275,6 +263,7 @@ export default function HomeScreen() {
           onYouPress={handleYouPress}
         />
       </View>
+      
       <ChatHistorySheet
         userId={user?.id ?? null}
         isOpen={isChatHistoryOpen}
