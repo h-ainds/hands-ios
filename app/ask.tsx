@@ -1,19 +1,22 @@
 import { useState, useEffect, useCallback } from 'react'
 import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
 import { LinearGradient } from 'expo-linear-gradient'
 import ChatView from '@/components/chat/ChatView'
 import { useRecipeChat } from '@/hooks/useRecipeChat'
 import { supabase } from '@/lib/supabase/client'
+import BackButton from '@/components/BackButton'
 
 export default function AskScreen() {
   const router = useRouter()
+  const { conversationId } = useLocalSearchParams()  // ← GET conversationId from URL
   const [input, setInput] = useState('')
   const [userId, setUserId] = useState<string | null>(null)
+  const [conversationLoaded, setConversationLoaded] = useState(false)
 
-  const { messages, recipeCards, status, isLoading, sendMessage, cancelRequest } = useRecipeChat({
+  const { messages, recipeCards, status, isLoading, sendMessage, cancelRequest, setMessages, setRecipeCards } = useRecipeChat({
     timeout: 30000,
   })
 
@@ -30,13 +33,59 @@ export default function AskScreen() {
     getUser()
   }, [])
 
+  // ⭐ LOAD CONVERSATION IF conversationId IS PROVIDED
+  useEffect(() => {
+    if (conversationId && !conversationLoaded) {
+      loadConversation(conversationId as string)
+    }
+  }, [conversationId])
+
+  const loadConversation = async (convId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('id', convId)
+        .single()
+
+      if (error) {
+        console.error('Error loading conversation:', error)
+        return
+      }
+
+      if (data?.content) {
+        // Load messages
+        setMessages(data.content)
+
+        // Load recipe cards from saved messages
+        const loadedRecipeCards: any[] = []
+        data.content.forEach((msg: any, index: number) => {
+          if (msg.role === 'assistant' && msg.recipes && msg.recipes.length > 0) {
+            loadedRecipeCards.push({
+              messageIndex: index,
+              recipes: {
+                text: msg.content,
+                items: msg.recipes
+              }
+            })
+          }
+        })
+        setRecipeCards(loadedRecipeCards)
+      }
+
+      setConversationLoaded(true)
+    } catch (error) {
+      console.error('Error in loadConversation:', error)
+    }
+  }
+
   const handleSubmit = useCallback(async () => {
     if (!input.trim() || isLoading) return
 
     const message = input.trim()
     setInput('')
-    await sendMessage(message)
-  }, [input, isLoading, sendMessage])
+    await sendMessage(message, conversationId as string | undefined)
+  }, [input, isLoading, sendMessage, conversationId])
 
   const handleBack = useCallback(() => {
     if (isLoading) cancelRequest()
@@ -58,6 +107,7 @@ export default function AskScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
+      <BackButton />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"

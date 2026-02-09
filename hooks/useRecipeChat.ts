@@ -26,9 +26,11 @@ interface UseRecipeChatReturn {
   status: StreamingStatus
   error: Error | null
   isLoading: boolean
-  sendMessage: (message: string) => Promise<void>
+  sendMessage: (message: string, conversationId?: string) => Promise<void>
   clearChat: () => void
   cancelRequest: () => void
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
+  setRecipeCards: React.Dispatch<React.SetStateAction<RecipeCardData[]>>
 }
 
 const DEFAULT_TIMEOUT = 30000 // 30 seconds
@@ -45,6 +47,7 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
   const [recipeCards, setRecipeCards] = useState<RecipeCardData[]>([])
   const [status, setStatus] = useState<StreamingStatus>('idle')
   const [error, setError] = useState<Error | null>(null)
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
@@ -80,8 +83,43 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
     }
   }, [typingDelay])
 
+  // Save message to Supabase conversation
+  const saveMessageToConversation = useCallback(async (
+    convId: string,
+    role: 'user' | 'assistant',
+    content: string,
+    recipes?: ParsedAnswer
+  ) => {
+    try {
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('content')
+        .eq('id', convId)
+        .single()
+
+      const currentContent = conv?.content || []
+      const newMessage: any = { role, content }
+      
+      if (recipes && recipes.items.length > 0) {
+        newMessage.recipes = recipes.items
+      }
+
+      const newContent = [...currentContent, newMessage]
+
+      await supabase
+        .from('conversations')
+        .update({
+          content: newContent,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', convId)
+    } catch (error) {
+      console.error('Error saving message:', error)
+    }
+  }, [])
+
   // Send message and handle streaming response
-  const sendMessage = useCallback(async (message: string) => {
+  const sendMessage = useCallback(async (message: string, conversationId?: string) => {
     if (!message.trim()) return
 
     // Cancel any existing request
@@ -89,12 +127,41 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
     abortControllerRef.current = new AbortController()
 
     const userMessage = message.trim()
+    let activeConversationId = conversationId || currentConversationId
 
     // Add user message and update status
     if (isMountedRef.current) {
       setMessages(prev => [...prev, { role: 'user' as const, content: userMessage }])
       setStatus('connecting')
       setError(null)
+    }
+
+    // Create new conversation if needed
+    if (!activeConversationId) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const { data, error } = await supabase
+            .from('conversations')
+            .insert({
+              title: userMessage.slice(0, 50) + '...',
+              user_id: user.id,
+              content: [{ role: 'user', content: userMessage }]
+            })
+            .select('id')
+            .single()
+
+          if (!error && data) {
+            activeConversationId = data.id
+            setCurrentConversationId(data.id)
+          }
+        }
+      } catch (err) {
+        console.error('Error creating conversation:', err)
+      }
+    } else {
+      // Save user message to existing conversation
+      await saveMessageToConversation(activeConversationId, 'user', userMessage)
     }
 
     // Create timeout
@@ -180,6 +247,8 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
         })
       }
 
+      const aiResponse = parsed ? parsed.text : fullResponse
+
       // Type out the response
       if (parsed && parsed.text) {
         await typeAssistantText(parsed.text)
@@ -211,6 +280,11 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
             )
           )
         }
+      }
+
+      // Save assistant message to conversation
+      if (activeConversationId) {
+        await saveMessageToConversation(activeConversationId, 'assistant', aiResponse, parsed || undefined)
       }
 
       if (isMountedRef.current) {
@@ -250,7 +324,7 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
     } finally {
       clearTimeout(timeoutId)
     }
-  }, [timeout, typeAssistantText, onError])
+  }, [timeout, typeAssistantText, onError, currentConversationId, saveMessageToConversation])
 
   // Clear all chat state
   const clearChat = useCallback(() => {
@@ -260,6 +334,7 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
       setRecipeCards([])
       setStatus('idle')
       setError(null)
+      setCurrentConversationId(null)
     }
   }, [])
 
@@ -280,5 +355,7 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
     sendMessage,
     clearChat,
     cancelRequest,
+    setMessages,
+    setRecipeCards,
   }
 }

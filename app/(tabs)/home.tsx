@@ -8,6 +8,9 @@ import Composer from '@/components/Composer'
 import RecipeCard from '@/components/RecipeCard'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/context/AuthContext'
+import ChatHistorySheet from '@/components/ChatHistorySheet'
+import { SymbolView } from 'expo-symbols'
+import { useFocusEffect } from 'expo-router'
 
 export default function HomeScreen() {
   const { recipes, loading, error } = useRecipes()
@@ -17,6 +20,7 @@ export default function HomeScreen() {
   const [heroLoading, setHeroLoading] = useState(true)
   const [recentRecipes, setRecentRecipes] = useState<Recipe[]>([])
   const [recentLoading, setRecentLoading] = useState(true)
+  const [isChatHistoryOpen, setIsChatHistoryOpen] = useState(false)
 
   // Fetch random hero recipe
   useEffect(() => {
@@ -89,6 +93,15 @@ export default function HomeScreen() {
     loadRecentRecipes()
   }, [loadRecentRecipes])
 
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        console.log('Home screen focused - reloading recent recipes')
+        loadRecentRecipes()
+      }
+    }, [user, loadRecentRecipes])
+  )
+
   if (loading) {
     return (
       <View className="flex-1 bg-white justify-center items-center">
@@ -122,6 +135,29 @@ export default function HomeScreen() {
 
   return (
     <View className="flex-1 bg-white">
+    {/* Chat History Button - Top Left */}
+    <Pressable
+      onPress={() => setIsChatHistoryOpen(true)}
+      style={{
+        position: 'absolute',
+        top: 56,
+        left: 16,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'white',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 50,
+      }}
+    >
+      <SymbolView name="text.alignleft" size={20} tintColor="#000000" />
+    </Pressable>
       <ScrollView className="flex-1" 
       contentContainerClassName="pb-20">
       
@@ -239,6 +275,11 @@ export default function HomeScreen() {
           onYouPress={handleYouPress}
         />
       </View>
+      <ChatHistorySheet
+        userId={user?.id ?? null}
+        isOpen={isChatHistoryOpen}
+        onClose={() => setIsChatHistoryOpen(false)}
+      />
     </View>
   )
 }
