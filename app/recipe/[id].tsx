@@ -4,13 +4,14 @@ import { useLocalSearchParams } from 'expo-router'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import type { Recipe } from '@/types'
+import BackButton from '@/components/BackButton'
+import { trackRecipeView } from '@/lib/supabase/track'  // ← ADD THIS
 
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams()
   const [recipe, setRecipe] = useState<Recipe | null>(null)
   const [loading, setLoading] = useState(true)
   const [isExpanded, setIsExpanded] = useState(false)
-
 
   useEffect(() => {
     loadRecipe()
@@ -26,6 +27,11 @@ export default function RecipeDetailScreen() {
 
       if (error) throw error
       setRecipe(data)
+      
+      if (data?.id) {
+        await trackRecipeView(data.id)
+        console.log('Tracked view for recipe:', data.id)
+      }
     } catch (error) {
       console.error('Error loading recipe:', error)
     } finally {
@@ -54,6 +60,9 @@ export default function RecipeDetailScreen() {
 
   return (
     <ScrollView style={styles.container}>
+      {/* Back Button */}
+      <BackButton />
+      
       {recipe.image && (
         <Image source={{ uri: recipe.image }} style={styles.image} />
       )}

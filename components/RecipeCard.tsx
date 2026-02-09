@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { View, Text, Image, Pressable } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
+import { trackRecipeCardTap } from '@/lib/supabase/track'
 
 interface RecipeCardProps {
   id?: string
@@ -14,12 +15,10 @@ interface RecipeCardProps {
   onPress?: () => void
 }
 
-// Plus Icon Component (using Text)
 const PlusIcon = () => (
   <Text className="text-black text-2xl font-bold">+</Text>
 )
 
-// Check Icon Component (using Text)
 const CheckIcon = () => (
   <Text className="text-green-500 text-2xl font-bold">✓</Text>
 )
@@ -38,7 +37,6 @@ export default function RecipeCard({
   const [isAdded, setIsAdded] = useState(false)
   const [imageError, setImageError] = useState(false)
 
-  // Get container classes based on cardType
   const getContainerClasses = () => {
     switch (cardType) {
       case 'vertical':
@@ -52,11 +50,10 @@ export default function RecipeCard({
     }
   }
 
-  // Get rounded classes
   const getRoundedClass = () => {
     switch (rounded) {
       case 'none':
-        return 'rounded-none';
+        return 'rounded-none'
       case 'lg':
         return 'rounded-lg'
       case 'xl':
@@ -68,25 +65,23 @@ export default function RecipeCard({
     }
   }
 
-  // Get title text classes based on cardType
   const getTitleClasses = () => {
     switch (cardType) {
       case 'vertical':
-        return 'text-lg font-bold tracking-tighter leading-tight';
+        return 'text-lg font-bold tracking-tighter leading-tight'
       case 'square':
-        return 'text-base font-extrabold leading-tight tracking-tighter';
+        return 'text-base font-extrabold leading-tight tracking-tighter'
       case 'horizontal':
         return 'text-base font-bold tracking-tight'
       default:
-        return 'text-lg font-bold tracking-tight';
+        return 'text-lg font-bold tracking-tight'
     }
   }
 
-  // Get title padding based on cardType
   const getTitlePadding = () => {
     switch (cardType) {
       case 'vertical':
-        return 'px-3 py-3';
+        return 'px-3 py-3'
       case 'square':
         return 'px-4 py-5'
       case 'horizontal':
@@ -100,11 +95,17 @@ export default function RecipeCard({
     setIsAdded(!isAdded)
   }
 
-  const handleCardPress = () => {
+  const handleCardPress = async () => {
+    // Track the tap FIRST
+    if (id) {
+      await trackRecipeCardTap(id)
+      console.log('Tracked tap for recipe:', id)
+    }
+
+    // Then navigate
     if (onPress) {
       onPress()
     } else if (id) {
-      // Navigate to recipe detail page
       router.push(`/recipe/${id}`)
     }
   }
@@ -114,43 +115,39 @@ export default function RecipeCard({
   const titleClasses = getTitleClasses()
   const titlePadding = getTitlePadding()
 
-  // Handle placeholder image
   const imageSource =
     imageError || !image
       ? require('../assets/placeholder.png')
       : { uri: image }
 
-    return (
-      <Pressable
-        onPress={onPress}
-        className={`${containerClasses} ${roundedClass} ${backgroundColor} overflow-hidden relative`}
-      >
-        {/* Image - fills entire card */}
-        <Image
-          source={imageSource}
-          className="absolute inset-0 w-full h-full"
-          resizeMode="cover"
-          onError={() => setImageError(true)}
-        />
-        
-        {/* Title Container with Gradient Overlay */}
-        <View className="absolute inset-0 flex justify-end">
-  <LinearGradient
-    colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']}
-    start={{ x: 0.5, y: 1 }}
-    end={{ x: 0.5, y: 0 }}
-    className={`w-full ${titlePadding}`}
+  return (
+    <Pressable
+      onPress={handleCardPress}
+      className={`${containerClasses} ${roundedClass} ${backgroundColor} overflow-hidden relative`}
     >
-    <Text
-      className={`text-white ${titleClasses}`}
-      numberOfLines={2}
-    >
-      {title}
-    </Text>
-  </LinearGradient>
- </View>
+      <Image
+        source={imageSource}
+        className="absolute inset-0 w-full h-full"
+        resizeMode="cover"
+        onError={() => setImageError(true)}
+      />
+      
+      <View className="absolute inset-0 flex justify-end">
+        <LinearGradient
+          colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']}
+          start={{ x: 0.5, y: 1 }}
+          end={{ x: 0.5, y: 0 }}
+          className={`w-full ${titlePadding}`}
+        >
+          <Text
+            className={`text-white ${titleClasses}`}
+            numberOfLines={2}
+          >
+            {title}
+          </Text>
+        </LinearGradient>
+      </View>
 
-      {/* Action Button */}
       {showActionButton && (
         <Pressable
           onPress={handleActionPress}
