@@ -5,7 +5,7 @@ import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { View, ActivityIndicator } from 'react-native'
 
 // Routes that don't require authentication
-const PUBLIC_ROUTES = ['login', 'signup', 'forgot-password', 'update-password', 'auth-callback']
+const PUBLIC_ROUTES = ['launch','login', 'signup', 'forgot-password', 'update-password', 'auth-callback']
 
 function RootLayoutNav() {
   const { session, loading } = useAuth()
@@ -22,7 +22,7 @@ function RootLayoutNav() {
 
     if (!session && !isPublicRoute) {
       // No session and trying to access protected route - redirect to login
-      router.replace('/login')
+      router.replace('/launch')
     } else if (session && isPublicRoute && currentRoute !== 'auth-callback') {
       // Has session but on auth route (except callback) - redirect to home
       router.replace('/(tabs)/home')
@@ -40,6 +40,7 @@ function RootLayoutNav() {
 
   return (
     <Stack>
+      <Stack.Screen name="launch" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />

@@ -9,7 +9,6 @@ export interface SignUpData {
   email: string
   password: string
   firstName: string
-  username: string
 }
 
 export interface LoginData {
@@ -30,7 +29,7 @@ export interface ResendEmailResult {
 // 2. Go to Supabase Dashboard > Authentication > Settings
 // 3. Enable "Confirm email" under Email Auth settings
 // 4. Uncomment the verification step in app/signup.tsx (line 129-138)
-export async function signUp({ email, password, firstName, username }: SignUpData) {
+export async function signUp({ email, password, firstName }: SignUpData) {
   try {
     console.log('[Auth] Calling supabase.auth.signUp (email verification disabled)')
 
@@ -76,7 +75,6 @@ export async function signUp({ email, password, firstName, username }: SignUpDat
       console.log('[Auth] Storing signup data for user:', data.user.id)
       await asyncStorage.setItem(`signup_data_${data.user.id}`, JSON.stringify({
         firstName,
-        username,
         email
       }))
     }
@@ -84,8 +82,8 @@ export async function signUp({ email, password, firstName, username }: SignUpDat
     return {
       user: data.user,
       session: data.session,
-      needsEmailVerification: false, // Email verification disabled - re-enable with: !data.session && data.user
-      signupData: { firstName, username, email }
+      needsEmailVerification: !data.session && !!data.user, // Email verification disabled - re-enable with: !data.session && data.user
+      signupData: { firstName, email }
     }
   } catch (error: any) {
     console.error('[Auth] SignUp caught error:', {
@@ -245,7 +243,7 @@ export async function checkOnboardingStatus(userId: string): Promise<{
 }
 
 // Get stored signup data and clear it
-export async function getAndClearSignupData(userId: string): Promise<{ firstName: string; username: string; email: string } | null> {
+export async function getAndClearSignupData(userId: string): Promise<{ firstName: string; email: string } | null> {
   const STORAGE_KEY = `signup_data_${userId}`
 
   try {
@@ -296,12 +294,10 @@ export async function getResendCooldownTime(email: string): Promise<{ canResend:
 export async function createUserProfile({
   userId,
   firstName,
-  username,
   email,
 }: {
   userId: string
   firstName: string
-  username: string
   email: string
 }) {
   try {
@@ -310,7 +306,6 @@ export async function createUserProfile({
       .upsert({
         id: userId,
         first_name: firstName,
-        username: username,
         email: email,
         created_at: new Date().toISOString(),
       })

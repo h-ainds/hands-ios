@@ -17,7 +17,6 @@ import { signUp, resendVerificationEmail, getResendCooldownTime } from '@/lib/au
 
 interface FormData {
   firstName: string
-  username: string
   email: string
   password: string
   confirmPassword: string
@@ -26,7 +25,6 @@ interface FormData {
 export default function SignupScreen() {
   const [formData, setFormData] = useState<FormData>({
     firstName: '',
-    username: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -56,7 +54,8 @@ export default function SignupScreen() {
   useEffect(() => {
     const checkCooldown = async () => {
       if (step === 'verification' && formData.email) {
-        const { canResend, remainingSeconds } = await getResendCooldownTime(formData.email)
+        const { canResend, remainingSeconds } =
+          await getResendCooldownTime(formData.email)
         if (!canResend) {
           setResendCountdown(remainingSeconds)
         }
@@ -72,11 +71,6 @@ export default function SignupScreen() {
   const validateForm = (): boolean => {
     if (!formData.firstName.trim()) {
       Alert.alert('Error', 'Please enter your first name')
-      return false
-    }
-
-    if (!formData.username.trim()) {
-      Alert.alert('Error', 'Please enter a username')
       return false
     }
 
@@ -116,7 +110,6 @@ export default function SignupScreen() {
         email: formData.email,
         password: formData.password,
         firstName: formData.firstName,
-        username: formData.username,
       })
 
       console.log('[SignUp] Result:', {
@@ -126,24 +119,21 @@ export default function SignupScreen() {
         userId: result.user?.id,
       })
 
-      // EMAIL VERIFICATION DISABLED: To re-enable, change needsEmailVerification check in lib/auth.ts
       if (result.needsEmailVerification) {
-        console.log('[SignUp] Email verification required - showing verification step')
         setStep('verification')
-        const { remainingSeconds } = await getResendCooldownTime(formData.email)
+        const { remainingSeconds } =
+          await getResendCooldownTime(formData.email)
         setResendCountdown(remainingSeconds)
       } else {
         Alert.alert('Success', 'Account created successfully!')
         router.replace('/onboarding-profile')
       }
     } catch (error: any) {
-      // Enhanced error logging
       console.error('[SignUp] Error occurred:', {
         message: error.message,
         status: error.status,
         code: error.code,
         name: error.name,
-        fullError: JSON.stringify(error, null, 2),
       })
       Alert.alert('Error', error.message || 'Failed to create account')
     } finally {
@@ -182,7 +172,6 @@ export default function SignupScreen() {
     return (
       <SafeAreaView className="flex-1 bg-white">
         <View className="flex-1 px-6 pt-6">
-          {/* Back Button */}
           <TouchableOpacity
             onPress={() => setStep('form')}
             className="w-10 h-10 rounded-full items-center justify-center"
@@ -191,37 +180,27 @@ export default function SignupScreen() {
           </TouchableOpacity>
 
           <View className="flex-1 items-center pt-16">
-            {/* Mail Icon */}
             <View className="w-16 h-16 bg-primary/10 rounded-full items-center justify-center mb-6">
               <SymbolView name="envelope" size={32} tintColor="#6CD401" />
             </View>
 
-            <Text className="text-3xl font-extrabold tracking-tight text-black text-center">
+            <Text className="text-3xl font-extrabold text-black text-center">
               Check your email
             </Text>
             <Text className="text-black/60 mt-2 text-center">
               We've sent a verification link to
             </Text>
-            <Text className="text-black font-medium mt-1">{formData.email}</Text>
-            <Text className="text-black/60 text-sm mt-4 text-center px-4">
-              Click the link in the email to verify your account and complete
-              your registration.
+            <Text className="text-black font-medium mt-1">
+              {formData.email}
             </Text>
 
-            {/* Resend Button */}
             <TouchableOpacity
               onPress={handleResendEmail}
               disabled={resendLoading || resendCountdown > 0}
-              className="w-full bg-[#F7F7F7] py-3.5 rounded-full mt-8 items-center justify-center flex-row"
-              style={{ opacity: resendLoading || resendCountdown > 0 ? 0.5 : 1 }}
+              className="w-full bg-[#F7F7F7] py-3.5 rounded-full mt-8 items-center justify-center"
             >
               {resendLoading ? (
-                <>
-                  <ActivityIndicator color="black" size="small" />
-                  <Text className="text-black text-lg font-medium ml-2">
-                    Sending...
-                  </Text>
-                </>
+                <ActivityIndicator color="black" />
               ) : resendCountdown > 0 ? (
                 <Text className="text-black text-lg font-medium">
                   Resend email ({resendCountdown}s)
@@ -234,10 +213,14 @@ export default function SignupScreen() {
             </TouchableOpacity>
 
             <View className="flex-row mt-4">
-              <Text className="text-black/60 text-sm">Already verified? </Text>
+              <Text className="text-black/60 text-sm">
+                Already verified?
+              </Text>
               <Link href="/login" asChild>
                 <TouchableOpacity>
-                  <Text className="text-primary font-medium text-sm">Log in</Text>
+                  <Text className="text-primary font-medium text-sm">
+                    {' '}Log in
+                  </Text>
                 </TouchableOpacity>
               </Link>
             </View>
@@ -254,12 +237,8 @@ export default function SignupScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
           <View className="flex-1 px-6 pt-6">
-            {/* Back Button */}
             <TouchableOpacity
               onPress={() => router.back()}
               className="w-10 h-10 rounded-full items-center justify-center"
@@ -267,9 +246,8 @@ export default function SignupScreen() {
               <SymbolView name="chevron.left" size={24} tintColor="#00000099" />
             </TouchableOpacity>
 
-            {/* Header */}
             <View className="mt-8">
-              <Text className="text-3xl font-extrabold tracking-tight text-black">
+              <Text className="text-3xl font-extrabold text-black">
                 Create your account
               </Text>
               <Text className="text-black/60 mt-1">
@@ -277,26 +255,13 @@ export default function SignupScreen() {
               </Text>
             </View>
 
-            {/* Form */}
             <View className="mt-8 space-y-4">
               <TextInput
                 placeholder="First name"
                 placeholderTextColor="#00000050"
                 value={formData.firstName}
                 onChangeText={v => updateFormData('firstName', v)}
-                autoCapitalize="words"
-                editable={!loading}
                 className="w-full px-4 py-3.5 rounded-2xl bg-[#F7F7F7] text-black text-lg"
-              />
-
-              <TextInput
-                placeholder="Username"
-                placeholderTextColor="#00000050"
-                value={formData.username}
-                onChangeText={v => updateFormData('username', v)}
-                autoCapitalize="none"
-                editable={!loading}
-                className="w-full px-4 py-3.5 rounded-2xl bg-[#F7F7F7] text-black text-lg mt-4"
               />
 
               <TextInput
@@ -306,8 +271,6 @@ export default function SignupScreen() {
                 onChangeText={v => updateFormData('email', v)}
                 keyboardType="email-address"
                 autoCapitalize="none"
-                autoComplete="email"
-                editable={!loading}
                 className="w-full px-4 py-3.5 rounded-2xl bg-[#F7F7F7] text-black text-lg mt-4"
               />
 
@@ -317,8 +280,6 @@ export default function SignupScreen() {
                 value={formData.password}
                 onChangeText={v => updateFormData('password', v)}
                 secureTextEntry
-                autoCapitalize="none"
-                editable={!loading}
                 className="w-full px-4 py-3.5 rounded-2xl bg-[#F7F7F7] text-black text-lg mt-4"
               />
 
@@ -328,26 +289,17 @@ export default function SignupScreen() {
                 value={formData.confirmPassword}
                 onChangeText={v => updateFormData('confirmPassword', v)}
                 secureTextEntry
-                autoCapitalize="none"
-                editable={!loading}
                 className="w-full px-4 py-3.5 rounded-2xl bg-[#F7F7F7] text-black text-lg mt-4"
               />
             </View>
 
-            {/* Signup Button */}
             <TouchableOpacity
               onPress={handleSignUp}
               disabled={loading}
-              className="w-full bg-primary py-3.5 rounded-full mt-6 items-center justify-center flex-row"
-              style={{ opacity: loading ? 0.5 : 1 }}
+              className="w-full bg-primary py-3.5 rounded-full mt-6 items-center justify-center"
             >
               {loading ? (
-                <>
-                  <ActivityIndicator color="white" size="small" />
-                  <Text className="text-white text-lg font-medium ml-2">
-                    Creating account...
-                  </Text>
-                </>
+                <ActivityIndicator color="white" />
               ) : (
                 <Text className="text-white text-lg font-medium">
                   Create account
@@ -355,12 +307,15 @@ export default function SignupScreen() {
               )}
             </TouchableOpacity>
 
-            {/* Login Link */}
             <View className="flex-row justify-center mt-6">
-              <Text className="text-black/60">Already have an account? </Text>
+              <Text className="text-black/60">
+                Already have an account?
+              </Text>
               <Link href="/login" asChild>
                 <TouchableOpacity>
-                  <Text className="text-primary font-medium">Log in</Text>
+                  <Text className="text-primary font-medium">
+                    {' '}Log in
+                  </Text>
                 </TouchableOpacity>
               </Link>
             </View>
