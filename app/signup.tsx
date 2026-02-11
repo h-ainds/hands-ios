@@ -120,14 +120,16 @@ export default function SignupScreen() {
       })
 
       if (result.needsEmailVerification) {
-        setStep('verification')
-        const { remainingSeconds } =
-          await getResendCooldownTime(formData.email)
-        setResendCountdown(remainingSeconds)
+        router.replace({
+          pathname: '/verify-email',
+          params: { email: formData.email },
+        })
+        return
       } else {
         Alert.alert('Success', 'Account created successfully!')
         router.replace('/onboarding-profile')
-      }
+      }      
+      
     } catch (error: any) {
       console.error('[SignUp] Error occurred:', {
         message: error.message,

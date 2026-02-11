@@ -5,7 +5,7 @@ import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { View, ActivityIndicator } from 'react-native'
 
 // Routes that don't require authentication
-const PUBLIC_ROUTES = ['launch','login', 'signup', 'forgot-password', 'update-password', 'auth-callback']
+const PUBLIC_ROUTES = ['launch', 'login', 'signup', 'verify-email', 'forgot-password', 'update-password', 'auth-callback']
 
 function RootLayoutNav() {
   const { session, loading } = useAuth()
@@ -51,6 +51,7 @@ function RootLayoutNav() {
       <Stack.Screen name="ask" options={{ headerShown: false }} />
       <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
       <Stack.Screen name="search" options={{ headerShown: false }} />
+      <Stack.Screen name="verify-email" options={{ headerShown: false }} />
     </Stack>
   )
 }

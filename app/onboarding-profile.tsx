@@ -106,7 +106,7 @@ export default function OnboardingProfileScreen() {
       await createUserProfile({
         userId: user.id,
         firstName: finalFirstName,
-        username: finalUsername, // ✅ never null
+        //username: finalUsername, // never null
         email: user.email,
       })
 

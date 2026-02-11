@@ -36,10 +36,8 @@ export async function signUp({ email, password, firstName }: SignUpData) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-      emailRedirectTo: 'handsios://auth-callback'
-      }
     })
+    
 
     // Log the full response for debugging
     console.log('[Auth] SignUp response:', {
@@ -165,10 +163,8 @@ export async function resendVerificationEmail(email: string): Promise<ResendEmai
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email,
-      options: {
-        emailRedirectTo: 'handsios://auth-callback'
-      }
     })
+    
 
     if (error) throw error
 
