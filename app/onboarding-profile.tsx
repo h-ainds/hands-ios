@@ -13,8 +13,30 @@ import {
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
-import { getCurrentUser, createUserProfile, checkOnboardingStatus, getAndClearSignupData, createTasteProfile } from '@/lib/auth'
+import {
+  getCurrentUser,
+  createUserProfile,
+  checkOnboardingStatus,
+  getAndClearSignupData,
+  createTasteProfile,
+} from '@/lib/auth'
 import { createTasteVectors } from '@/lib/taste-vectorization'
+
+function slugifyUsername(input: string) {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '') // remove spaces
+    .replace(/[^a-z0-9_]/g, '') // keep a-z, 0-9, _
+}
+
+function generateUsername(email?: string, firstName?: string) {
+  const emailPrefix = email?.split('@')?.[0] || 'user'
+  const baseRaw = firstName?.trim() ? firstName : emailPrefix
+  const base = slugifyUsername(baseRaw) || 'user'
+  const suffix = Math.floor(1000 + Math.random() * 9000) // 4 digits
+  return `${base}${suffix}`
+}
 
 export default function OnboardingProfileScreen() {
   const router = useRouter()
@@ -26,7 +48,6 @@ export default function OnboardingProfileScreen() {
   // Data states
   const [user, setUser] = useState<any>(null)
   const [firstName, setFirstName] = useState('')
-  const [username, setUsername] = useState('')
 
   const hasCheckedAuth = useRef(false)
 
@@ -36,7 +57,6 @@ export default function OnboardingProfileScreen() {
 
     async function auth() {
       try {
-        // 1. Check whether user logged in
         const currentUser = await getCurrentUser()
         if (!currentUser) {
           router.push('/login')
@@ -44,19 +64,15 @@ export default function OnboardingProfileScreen() {
         }
         setUser(currentUser)
 
-        // 2. Check onboarding status for returning users
         const status = await checkOnboardingStatus(currentUser.id)
-
         if (!status.needsOnboarding) {
           router.push('/(tabs)/home')
           return
         }
 
         const signupData = await getAndClearSignupData(currentUser.id)
-
-        if (signupData) {
+        if (signupData?.firstName) {
           setFirstName(signupData.firstName)
-          setUsername(signupData.username)
         }
       } catch (err) {
         console.error(err)
@@ -69,6 +85,12 @@ export default function OnboardingProfileScreen() {
   }, [router])
 
   const handleCompleteOnboarding = async () => {
+    if (!user?.id) {
+      Alert.alert('Error', 'User session missing. Please log in again.')
+      router.replace('/login')
+      return
+    }
+
     if (!selectedTaste.trim()) {
       Alert.alert('Error', 'Please tell us about your taste preferences')
       return
@@ -77,11 +99,14 @@ export default function OnboardingProfileScreen() {
     setSubmitting(true)
 
     try {
+      const finalFirstName = firstName?.trim() || 'Friend'
+      const finalUsername = generateUsername(user.email, finalFirstName)
+
       console.log('[Onboarding] Creating user profile for:', user.id)
       await createUserProfile({
         userId: user.id,
-        firstName,
-        username: username || ' ',
+        firstName: finalFirstName,
+        //username: finalUsername, // never null
         email: user.email,
       })
 
@@ -102,17 +127,17 @@ export default function OnboardingProfileScreen() {
   }
 
   const exampleTastes = [
-    "I eat anything and everything except celery",
-    "My favorite food is pizza, extra pineapple",
+    'I eat anything and everything except celery',
+    'My favorite food is pizza, extra pineapple',
     "My kids love asian food, my daughter's vegetarian",
     "I don't like Irish stew and I'm not crazy about cod",
-    "I really love a tuna melt",
+    'I really love a tuna melt',
     "I don't eat octopus 'cause they're super smart",
-    "I love soup. Chicken tortilla soup.",
-    "Love thai food, like noodle dishes like ramen",
+    'I love soup. Chicken tortilla soup.',
+    'Love thai food, like noodle dishes like ramen',
     "I don't like dill. I can't stand dill",
-    "big arugula salad, and I love it on top of pizza",
-    "I do love lemon chicken with vegetables",
+    'big arugula salad, and I love it on top of pizza',
+    'I do love lemon chicken with vegetables',
     "Couldn't live without sushi",
   ]
 
@@ -131,8 +156,8 @@ export default function OnboardingProfileScreen() {
           <TouchableOpacity
             onPress={() => {
               if (router.canGoBack()) router.back()
-              else router.replace('/(tabs)/home') // or '/login' depending on what you want
-            }}            
+              else router.replace('/(tabs)/home')
+            }}
             className="w-10 h-10 rounded-full items-center justify-center"
           >
             <SymbolView name="chevron.left" size={24} tintColor="#00000099" />
@@ -172,12 +197,12 @@ export default function OnboardingProfileScreen() {
             }}
           >
             {submitting ? (
-              <>
+              <View className="flex-row items-center">
                 <ActivityIndicator color="white" size="small" />
                 <Text className="text-white text-lg font-medium ml-2">
                   Setting up your profile...
                 </Text>
-              </>
+              </View>
             ) : (
               <Text
                 className="text-lg font-medium"
@@ -208,11 +233,7 @@ export default function OnboardingProfileScreen() {
                   onPress={() => setSelectedTaste(text)}
                   className="absolute bottom-2 right-2 p-1 rounded"
                 >
-                  <SymbolView
-                    name="arrow.up.forward"
-                    size={16}
-                    tintColor="#00000099"
-                  />
+                  <SymbolView name="arrow.up.forward" size={16} tintColor="#00000099" />
                 </TouchableOpacity>
               </View>
             ))}
