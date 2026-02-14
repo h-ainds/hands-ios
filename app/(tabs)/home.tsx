@@ -1,5 +1,6 @@
 import { Image, Pressable, ActivityIndicator, ScrollView } from 'react-native'
 import { Text, View } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { useRecipes } from '@/hooks/useRecipes'
 import { useRouter } from 'expo-router'
 import { useEffect, useState, useCallback } from 'react'
@@ -170,6 +171,20 @@ export default function HomeScreen() {
                   className="w-full h-[56vh]"
                   resizeMode="cover"
                 />
+                {/* Gradient Overlay */}
+                <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.4)']}
+                locations={[0.5, 1]}
+                style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: 0,
+                }}
+               pointerEvents="none"
+               />
+                {/* Hero TEXT */}
                 <View className="absolute bottom-0 p-4">
                   <Text className="text-3xl text-white font-extrabold tracking-tighter leading-none">
                     {heroRecipe.title}

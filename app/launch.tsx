@@ -53,18 +53,18 @@ export default function LaunchScreen() {
     <SafeAreaView className="flex-1 bg-white">
       <View className="flex-1 px-6 pt-10">
         {/* Logo */}
-        <Text className="text-center text-primary font-extrabold text-2xl">
+        <Text className="text-center text-primary tracking-tighter font-extrabold text-2xl">
           Hands
         </Text>
 
         {/* Headline */}
         <View className="mt-10">
-          <Text className="text-5xl font-extrabold text-black leading-tight">
-            Your kitchen{"\n"}co-pilot.
+          <Text className="text-5xl font-extrabold text-black leading-none tracking-tighter">
+            Your weeknight{"\n"}sous-chef.
           </Text>
 
           {/* Bigger + bolder + aligned with headline */}
-          <Text className="text-black text-2xl font-extrabold mt-6 leading-8">
+          <Text className="text-black text-3xl font-extrabold mt-4 leading-none tracking-tighter">
             Get recipe ideas, plan meals, and shop groceries faster.
           </Text>
         </View>
