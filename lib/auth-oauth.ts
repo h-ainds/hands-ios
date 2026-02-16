@@ -105,6 +105,10 @@ export async function signInWithGoogle(): Promise<OAuthResult> {
       provider: 'google',
       options: {
         redirectTo: redirectUrl,
+        // Force Google account chooser to prevent auto-login to deleted accounts
+        queryParams: {
+          prompt: 'select_account',
+        },
         // For native, we want to manually open the browser session
         ...(Platform.OS !== 'web' ? { skipBrowserRedirect: true } : {}),
       },

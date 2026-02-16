@@ -44,6 +44,8 @@ export default function OnboardingProfileScreen() {
   // UI states
   const [selectedTaste, setSelectedTaste] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [generatedChips, setGeneratedChips] = useState<string[]>([])
+  const [showSuccessStep, setShowSuccessStep] = useState(false)
 
   // Data states
   const [user, setUser] = useState<any>(null)
@@ -110,14 +112,14 @@ export default function OnboardingProfileScreen() {
         email: user.email,
       })
 
-      console.log('[Onboarding] Creating taste vectors')
-      const vectors = await createTasteVectors(selectedTaste)
+      console.log('[Onboarding] Creating taste vectors and preferences')
+      const { vectors, preferences } = await createTasteVectors(selectedTaste)
+      setGeneratedChips(preferences)
 
       console.log('[Onboarding] Creating taste profile')
-      await createTasteProfile(user.id, selectedTaste, vectors)
+      await createTasteProfile(user.id, selectedTaste, vectors, preferences)
 
-      Alert.alert('Success', 'Welcome to Hands!')
-      setTimeout(() => router.replace('/(tabs)/home'), 500)
+      setShowSuccessStep(true)
     } catch (err: any) {
       console.error('[Onboarding] Error:', err)
       Alert.alert('Error', err.message || 'Failed to complete onboarding')
@@ -140,6 +142,48 @@ export default function OnboardingProfileScreen() {
     'I do love lemon chicken with vegetables',
     "Couldn't live without sushi",
   ]
+
+  // Success step: show chips (if any) and a Continue button before redirecting
+  if (showSuccessStep) {
+    return (
+      <SafeAreaView className="flex-1 bg-white">
+        <View className="flex-1 px-6 pt-6">
+          <View className="mt-12">
+            <Text className="text-2xl font-extrabold tracking-tighter text-black">
+              {generatedChips.length > 0 ? 'Your taste profile' : "You're all set"}
+            </Text>
+            <Text className="text-base tracking-tight text-black/60 mt-2">
+              {generatedChips.length > 0
+                ? "Here's what we picked up. You can always see this on your profile."
+                : "Welcome to Hands. Get started below."}
+            </Text>
+          </View>
+          {generatedChips.length > 0 && (
+            <View className="flex-row flex-wrap gap-2 mt-8">
+              {generatedChips.map((label, index) => (
+                <View
+                  key={`${index}-${label}`}
+                  className="bg-[#E8F5E0] rounded-full px-4 py-2.5"
+                >
+                  <Text className="text-base text-black/90">{label}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          <TouchableOpacity
+            onPress={() => {
+              Alert.alert('Success', 'Welcome to Hands!', [
+                { text: 'Continue', onPress: () => router.replace('/(tabs)/home') },
+              ])
+            }}
+            className="w-full bg-primary py-4 rounded-full items-center justify-center mt-10"
+          >
+            <Text className="text-white text-lg font-semibold">Continue to Hands</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    )
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -212,6 +256,23 @@ export default function OnboardingProfileScreen() {
               </Text>
             )}
           </TouchableOpacity>
+
+          {/* Generated taste preference chips (after NLP) */}
+          {generatedChips.length > 0 && (
+            <View className="mt-6">
+              <Text className="text-sm text-black/60 mb-2">Your taste profile</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {generatedChips.map((label, index) => (
+                  <View
+                    key={`${index}-${label}`}
+                    className="bg-[#E8F5E0] rounded-full px-4 py-2"
+                  >
+                    <Text className="text-base text-black/90">{label}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           {/* Example Chips */}
           <ScrollView

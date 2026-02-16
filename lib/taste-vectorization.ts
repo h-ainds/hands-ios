@@ -6,20 +6,25 @@
 
 import { supabase } from '@/lib/supabase/client'
 
+export interface TasteVectorizationResult {
+  vectors: Record<string, unknown>
+  preferences: string[]
+}
+
 /**
- * Create taste vectors from taste preference text
+ * Create taste vectors and preference chips from taste preference text.
  *
  * Calls the Supabase Edge Function 'taste-vectors' which uses OpenAI
- * to analyze the user's taste preferences and return structured vectors.
+ * to analyze the user's taste preferences and return structured vectors
+ * and 6-7 chip strings.
  *
  * @param tasteText - User's taste preferences as free text
- * @returns Taste vectors object with structured preference data
+ * @returns { vectors, preferences } for storage and chip rendering
  */
-export async function createTasteVectors(tasteText: string): Promise<any> {
+export async function createTasteVectors(tasteText: string): Promise<TasteVectorizationResult> {
   try {
     console.log('[TasteVectorization] Calling edge function with taste text')
 
-    // Get the current session to ensure we have a valid auth token
     const {
       data: { session },
     } = await supabase.auth.getSession()
@@ -28,28 +33,33 @@ export async function createTasteVectors(tasteText: string): Promise<any> {
       throw new Error('Not authenticated')
     }
 
-    // Call the Supabase Edge Function
     const { data, error } = await supabase.functions.invoke('taste-vectors', {
       body: { tasteText },
     })
 
     if (error) {
-      console.error('[TasteVectorization] Edge function error:', error)
-      throw new Error(error.message || 'Failed to generate taste vectors')
+      console.warn('[TasteVectorization] Edge function returned error (onboarding will continue without vectors/chips):', error.message)
+      return { vectors: {}, preferences: [] }
     }
 
     if (!data?.success) {
-      throw new Error(data?.error || 'Failed to generate taste vectors')
+      console.warn('[TasteVectorization] Edge function reported failure:', data?.error)
+      return { vectors: {}, preferences: [] }
     }
 
-    console.log('[TasteVectorization] Successfully generated taste vectors')
-    return data.vectors || {}
+    const preferences = Array.isArray(data.preferences)
+      ? (data.preferences as string[]).map((s: string) => String(s).trim()).filter(Boolean)
+      : []
+
+    const prefCount = Array.isArray(data.preferences) ? data.preferences.length : 0
+    console.log('[TasteVectorization] Success:', prefCount, 'preference chips')
+    return {
+      vectors: data.vectors || {},
+      preferences,
+    }
   } catch (error) {
     console.error('[TasteVectorization] Error creating taste vectors:', error)
-
-    // Return empty object on error to allow onboarding to continue
-    // This prevents the onboarding flow from breaking if vectorization fails
-    console.warn('[TasteVectorization] Returning empty vectors due to error')
-    return {}
+    console.warn('[TasteVectorization] Returning empty vectors and no preferences due to error')
+    return { vectors: {}, preferences: [] }
   }
 }
