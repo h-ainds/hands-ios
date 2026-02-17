@@ -30,7 +30,7 @@ export default function VerifyEmailScreen() {
       const { error } = await supabase.auth.verifyOtp({
         email: cleanEmail,
         token: cleanCode,
-        type: 'email',
+        type: 'signup', // must match the confirmation flow (signUp / resend with type: 'signup')
       })
       if (error) throw error
 
@@ -57,7 +57,12 @@ export default function VerifyEmailScreen() {
           maxLength={6}
           placeholder="123456"
           placeholderTextColor="#00000040"
-          className="w-full mt-8 px-6 py-4 rounded-2xl bg-[#F7F7F7] text-center text-2xl tracking-widest"
+          className="w-full mt-8 px-6 py-4 rounded-2xl bg-[#F7F7F7] text-center text-2xl tracking-widest text-black"
+          style={{ color: '#000000' }}
+          autoFocus
+          textContentType="oneTimeCode"
+          autoComplete="off"
+          secureTextEntry={false}
         />
 
         <TouchableOpacity

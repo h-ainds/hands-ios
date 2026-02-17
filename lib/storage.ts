@@ -26,3 +26,25 @@ export const asyncStorage = {
     await AsyncStorage.removeItem(key)
   },
 }
+
+/**
+ * Clear all user-related data from local storage
+ * Called after account deletion to ensure clean state
+ */
+export async function clearAllUserData(): Promise<void> {
+  try {
+    // Clear all AsyncStorage keys (user preferences, temp data, etc.)
+    // Note: This clears ALL AsyncStorage - if you have non-user data,
+    // you may want to be more selective
+    await AsyncStorage.clear()
+    
+    // Clear SecureStore (auth tokens are managed by Supabase client,
+    // but clear any custom secure data if needed)
+    // Note: Supabase client handles its own token cleanup on signOut
+    
+    console.log('[Storage] Cleared all user data from local storage')
+  } catch (error) {
+    console.error('[Storage] Error clearing user data:', error)
+    // Don't throw - clearing storage is best-effort
+  }
+}
