@@ -41,15 +41,12 @@ export default function ProfileScreen() {
             }
 
             try {
-              // Get current session for authentication
               const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-              
               if (sessionError || !session) {
                 Alert.alert('Error', 'Session expired. Please log in again.')
                 return
               }
 
-              // Build Edge Function URL
               const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
               const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
 
@@ -57,10 +54,7 @@ export default function ProfileScreen() {
                 throw new Error('Supabase configuration missing')
               }
 
-              const functionUrl = `${supabaseUrl}/functions/v1/delete-account`
-
-              // Call backend endpoint to delete account
-              const response = await fetch(functionUrl, {
+              const response = await fetch(`${supabaseUrl}/functions/v1/delete-account`, {
                 method: 'DELETE',
                 headers: {
                   'Content-Type': 'application/json',
@@ -78,30 +72,19 @@ export default function ProfileScreen() {
                   'Error',
                   `Failed to delete account: ${errorMessage}. Your account was not deleted.`
                 )
-                return // Don't sign out if deletion failed
+                return
               }
 
               if (!result.ok) {
                 console.error('[DeleteAccount] Unexpected response:', result)
                 Alert.alert('Error', 'Account deletion failed. Please try again.')
-                return // Don't sign out if deletion failed
+                return
               }
 
-              // Success! Now clean up client state
               console.log('[DeleteAccount] Account deleted successfully, cleaning up client state')
-
-              // Clear all local storage/cache
               await clearAllUserData()
-
-              // Sign out globally (all sessions)
               const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' })
-              
-              if (signOutError) {
-                console.error('[DeleteAccount] Sign out error:', signOutError)
-                // Continue anyway - account is deleted on server
-              }
-
-              // Redirect to login
+              if (signOutError) console.error('[DeleteAccount] Sign out error:', signOutError)
               router.replace('/login')
             } catch (error: any) {
               console.error('[DeleteAccount] Error:', error)
@@ -117,24 +100,23 @@ export default function ProfileScreen() {
   }
 
   const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture
-  const firstName = user?.user_metadata?.first_name || 'User'
-  const username = user?.user_metadata?.username || 'User'
+  const firstName = user?.user_metadata?.first_name || 'You'
   const email = user?.email || ''
 
   return (
     <SafeAreaView className="flex-1 bg-white">
-      <View className="p-4">
+      <View className="p-4 pt-16">
         {/* Avatar & Name */}
         <View className="items-center mb-8">
-          <View className="w-28 h-28 rounded-full bg-white items-center justify-center mb-2">
+          <View className="w-[118px] h-[118px] rounded-full bg-gray-100 items-center justify-center mb-3">
             {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} className="w-28 h-28 rounded-full" />
+              <Image source={{ uri: avatarUrl }} className="w-[118px] h-[118px] rounded-full" />
             ) : (
-              <SymbolView name="person.circle.fill" size={80} tintColor="#9F9F9F" />
+              <SymbolView name="person.fill" size={48} tintColor="#9F9F9F" />
             )}
           </View>
-          <Text className="text-2xl font-bold text-black">{firstName}</Text>
-          <Text className="text-secondary-muted">{username} • {email}</Text>
+          <Text className="text-2.5xl font-bold text-black">{firstName}</Text>
+          <Text className="text-base text-secondary-muted">{email}</Text>
         </View>
 
         {/* Your taste profile (saved from onboarding) */}
@@ -154,13 +136,24 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {/* Memory Button */}
+        <Pressable
+          onPress={() => router.push('/memory')}
+          className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
+        >
+          <SymbolView name="brain.head.profile" size={20} tintColor="#000" />
+          <Text className="text-black ml-3 text-xl font-bold flex-1">Memory</Text>
+          <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
+        </Pressable>
+
         {/* Logout Button */}
         <Pressable
           onPress={handleLogout}
           className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
         >
           <SymbolView name="rectangle.portrait.and.arrow.right" size={20} tintColor="#000" />
-          <Text className="text-black ml-3">Logout</Text>
+          <Text className="text-black ml-3 text-xl font-bold flex-1">Logout</Text>
+          <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
         </Pressable>
 
         {/* Delete Account Button */}
@@ -169,7 +162,8 @@ export default function ProfileScreen() {
           className="bg-white rounded-xl p-4 flex-row items-center active:opacity-70"
         >
           <SymbolView name="trash.fill" size={20} tintColor="#ef4444" />
-          <Text className="text-red-600 ml-3">Delete Account</Text>
+          <Text className="text-red-600 ml-3 text-xl font-bold flex-1">Delete Account</Text>
+          <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
         </Pressable>
       </View>
     </SafeAreaView>
