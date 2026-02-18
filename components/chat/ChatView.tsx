@@ -50,11 +50,11 @@ export default function ChatView({
   if ((!messages || messages.length === 0) && !isTyping) {
     return (
       <View className="flex-1 items-center justify-center px-8">
-        <Text className="text-2xl font-semibold text-black text-center">
-          Make dinner from leftovers
+        <Text className="text-2.5xl font-semibold text-black text-center tracking-tighter">
+          Turn leftovers into dinner
         </Text>
-        <Text className="text-sm text-secondary-muted text-center mt-2 max-w-[280px]">
-          Get recipe ideas, meal plans, substitutions, and budget-friendly tips.
+        <Text className="text-base text-secondary-muted text-center mt-2 tracking-tight leading-6">
+          Get recipe ideas tailored to your ingredients and goals.
         </Text>
       </View>
     )
