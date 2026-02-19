@@ -32,7 +32,6 @@ export default function ProfileScreen() {
 
             try {
               const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-
               if (sessionError || !session) {
                 Alert.alert('Error', 'Session expired. Please log in again.')
                 return
@@ -57,20 +56,32 @@ export default function ProfileScreen() {
               const result = await response.json()
 
               if (!response.ok) {
-                Alert.alert('Error', `Failed to delete account: ${result.error || `Server error (${response.status})`}. Your account was not deleted.`)
+                const errorMessage = result.error || `Server error (${response.status})`
+                console.error('[DeleteAccount] Server error:', errorMessage)
+                Alert.alert(
+                  'Error',
+                  `Failed to delete account: ${errorMessage}. Your account was not deleted.`
+                )
                 return
               }
 
               if (!result.ok) {
+                console.error('[DeleteAccount] Unexpected response:', result)
                 Alert.alert('Error', 'Account deletion failed. Please try again.')
                 return
               }
 
+              console.log('[DeleteAccount] Account deleted successfully, cleaning up client state')
               await clearAllUserData()
-              await supabase.auth.signOut({ scope: 'global' })
-              router.replace('/login')
+              const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' })
+              if (signOutError) console.error('[DeleteAccount] Sign out error:', signOutError)
+              router.replace('/launch')
             } catch (error: any) {
-              Alert.alert('Error', `Failed to delete account: ${error.message || 'Unknown error'}. Your account was not deleted.`)
+              console.error('[DeleteAccount] Error:', error)
+              Alert.alert(
+                'Error',
+                `Failed to delete account: ${error.message || 'Unknown error'}. Your account was not deleted.`
+              )
             }
           },
         },

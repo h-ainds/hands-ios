@@ -23,8 +23,8 @@ function RootLayoutNav() {
     if (!session && !isPublicRoute) {
       // No session and trying to access protected route - redirect to login
       router.replace('/launch')
-    } else if (session && isPublicRoute && currentRoute !== 'auth-callback') {
-      // Has session but on auth route (except callback) - redirect to home
+    } else if (session && isPublicRoute && currentRoute !== 'auth-callback' && currentRoute !== 'signup' && currentRoute !== 'verify-email') {
+      // Has session but on auth route - redirect to home (signup/verify-email send to onboarding themselves)
       router.replace('/(tabs)/home')
     }
   }, [session, loading, segments])
