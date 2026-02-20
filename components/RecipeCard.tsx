@@ -3,9 +3,10 @@ import { View, Text, Image, Pressable } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { trackRecipeCardTap } from '@/lib/supabase/track'
+import { supabase } from '@/lib/supabase/client'
 
 interface RecipeCardProps {
-  id?: string
+  id?: string | number
   title: string
   image?: string
   cardType?: 'vertical' | 'square' | 'horizontal'
@@ -36,11 +37,55 @@ export default function RecipeCard({
   const router = useRouter()
   const [isAdded, setIsAdded] = useState(false)
   const [imageError, setImageError] = useState(false)
+  const [imageUrl, setImageUrl] = useState<string | undefined>(undefined)
+
+  // Fetch image from database if image prop is missing/empty but id is provided
+  useEffect(() => {
+    // If we have an image prop that's not empty and not "undefined", use it
+    const trimmedImage = image?.trim()
+    // Treat "undefined" and "null" strings as if there's no image
+    if (trimmedImage && trimmedImage !== 'undefined' && trimmedImage !== 'null') {
+      setImageUrl(trimmedImage)
+      return
+    }
+
+    // If no image but we have an id, fetch from database
+    if (id) {
+      let cancelled = false
+      // Convert id to number if it's a string (database uses numeric IDs)
+      // Supabase can handle both, but being explicit helps
+      const recipeId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
+      
+      supabase
+        .from('recipes')
+        .select('image')
+        .eq('id', recipeId)
+        .maybeSingle()
+        .then(({ data, error }) => {
+          if (!cancelled) {
+            if (error) {
+              console.error('Error fetching recipe image:', error)
+            } else if (data?.image) {
+              setImageUrl(data.image)
+            }
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            console.error('Error fetching recipe image:', err)
+          }
+        })
+      return () => { cancelled = true }
+    } else {
+      // No id and no image, clear imageUrl
+      setImageUrl(undefined)
+    }
+  }, [id, image])
 
   // Reset error state when image URL changes so a newly fetched URL can display
   useEffect(() => {
     setImageError(false)
-  }, [image])
+  }, [imageUrl])
 
   const getContainerClasses = () => {
     switch (cardType) {
@@ -121,9 +166,9 @@ export default function RecipeCard({
   const titlePadding = getTitlePadding()
 
   const imageSource =
-    imageError || !image
+    imageError || !imageUrl
       ? require('../assets/placeholder.png')
-      : { uri: image }
+      : { uri: imageUrl }
 
   return (
     <Pressable

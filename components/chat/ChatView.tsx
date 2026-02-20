@@ -5,8 +5,7 @@ import {
   ScrollView,
   FlatList,
 } from 'react-native'
-import { useRouter } from 'expo-router'
-import RecipeCardWithImage from '@/components/chat/RecipeCardWithImage'
+import RecipeCard from '@/components/RecipeCard'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -32,7 +31,6 @@ export default function ChatView({
   recipeCards = [],
 }: ChatViewProps) {
   const scrollViewRef = useRef<ScrollView>(null)
-  const router = useRouter()
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -102,7 +100,13 @@ export default function ChatView({
                         contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
                         keyExtractor={item => item.id}
                         renderItem={({ item }) => (
-                          <RecipeCardWithImage item={item} />
+                          <RecipeCard
+                            id={item.id}
+                            title={item.title}
+                            image={item.image}
+                            cardType="vertical"
+                            showActionButton={false}
+                          />
                         )}
                       />
                     </View>
