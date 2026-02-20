@@ -52,13 +52,9 @@ export default function LaunchScreen() {
   return (
     <SafeAreaView className="flex-1 bg-white">
       <View className="flex-1 px-6 pt-10">
-        {/* Logo */}
-        <Text className="text-center text-primary tracking-tighter font-extrabold text-2xl">
-          Hands
-        </Text>
 
         {/* Headline */}
-        <View className="mt-10">
+        <View className="mt-16">
           <Text className="text-5xl font-extrabold text-black leading-none tracking-tighter">
             Your weeknight{"\n"}sous-chef.
           </Text>
@@ -70,12 +66,12 @@ export default function LaunchScreen() {
         </View>
 
         {/* Buttons */}
-        <View className="mt-10">
+        <View className="mt-12">
           {/* Apple */}
           <TouchableOpacity
             onPress={handleApple}
             disabled={oauthLoading}
-            className="w-full bg-black py-4 rounded-full"
+            className="w-full bg-black py-3.5 rounded-full"
             style={{ opacity: oauthLoading ? 0.6 : 1 }}
           >
             {oauthLoading ? (
@@ -90,7 +86,7 @@ export default function LaunchScreen() {
                 </View>
 
                 {/* Centered label */}
-                <Text className="text-white text-lg font-semibold">
+                <Text className="text-white text-lg font-medium">
                   Continue with Apple
                 </Text>
               </View>
@@ -101,7 +97,7 @@ export default function LaunchScreen() {
           <TouchableOpacity
             onPress={handleGoogle}
             disabled={oauthLoading}
-            className="w-full bg-white border-2 border-gray-200 py-4 rounded-full mt-4"
+            className="w-full bg-white border-2 border-gray-200 py-3.5 rounded-full mt-4"
             style={{ opacity: oauthLoading ? 0.6 : 1 }}
           >
             {oauthLoading ? (
@@ -130,7 +126,7 @@ export default function LaunchScreen() {
           {/* Sign up */}
           <TouchableOpacity
             onPress={() => router.push('/signup')}
-            className="w-full bg-primary py-4 rounded-full items-center justify-center mt-4"
+            className="w-full bg-primary py-3.5 rounded-full items-center justify-center mt-4"
           >
             <Text className="text-white text-lg font-semibold">Sign up</Text>
           </TouchableOpacity>
@@ -138,7 +134,7 @@ export default function LaunchScreen() {
           {/* Log in */}
           <TouchableOpacity
             onPress={() => router.push('/login')}
-            className="w-full bg-[#F2F2F2] py-4 rounded-full items-center justify-center mt-4"
+            className="w-full bg-secondary py-3.5 rounded-full items-center justify-center mt-4"
           >
             <Text className="text-black text-lg font-semibold">Log in</Text>
           </TouchableOpacity>

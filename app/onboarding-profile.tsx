@@ -147,12 +147,12 @@ export default function OnboardingProfileScreen() {
   if (showSuccessStep) {
     return (
       <SafeAreaView className="flex-1 bg-white">
-        <View className="flex-1 px-6 pt-6">
-          <View className="mt-12">
-            <Text className="text-2xl font-extrabold tracking-tighter text-black">
-              {generatedChips.length > 0 ? 'Your taste profile' : "You're all set"}
+        <View className="flex-1 px-6 pt-20">
+          <View className="mt-0">
+            <Text className="text-3xl font-extrabold tracking-tighter text-black">
+              {generatedChips.length > 0 ? 'Your preferences' : "You're all set"}
             </Text>
-            <Text className="text-base tracking-tight text-black/60 mt-2">
+            <Text className="text-base tracking-tighter text-secondary-placeholder mt-2">
               {generatedChips.length > 0
                 ? "Here's what we picked up. You can always see this on your profile."
                 : "Welcome to Hands. Get started below."}
@@ -163,23 +163,19 @@ export default function OnboardingProfileScreen() {
               {generatedChips.map((label, index) => (
                 <View
                   key={`${index}-${label}`}
-                  className="bg-[#E8F5E0] rounded-full px-4 py-2.5"
+                  className="bg-secondary rounded-full px-4 py-2.5"
                 >
                   <Text className="text-base text-black/90">{label}</Text>
                 </View>
               ))}
             </View>
           )}
-          <TouchableOpacity
-            onPress={() => {
-              Alert.alert('Success', 'Welcome to Hands!', [
-                { text: 'Continue', onPress: () => router.replace('/(tabs)/home') },
-              ])
-            }}
-            className="w-full bg-primary py-4 rounded-full items-center justify-center mt-10"
-          >
-            <Text className="text-white text-lg font-semibold">Continue to Hands</Text>
-          </TouchableOpacity>
+<TouchableOpacity
+  onPress={() => router.replace('/(tabs)/home')}
+  className="w-full bg-primary py-4 rounded-full items-center justify-center mt-10"
+>
+  <Text className="text-white text-lg font-semibold">Continue to Hands</Text>
+</TouchableOpacity>
         </View>
       </SafeAreaView>
     )
@@ -192,28 +188,17 @@ export default function OnboardingProfileScreen() {
         className="flex-1"
       >
         <ScrollView
-          className="flex-1 px-6 pt-6"
-          contentContainerStyle={{ paddingBottom: 32 }}
+          className="flex-1 px-6 pt-20"
+          contentContainerStyle={{ paddingBottom: 16 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Back Button */}
-          <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) router.back()
-              else router.replace('/(tabs)/home')
-            }}
-            className="w-10 h-10 rounded-full items-center justify-center"
-          >
-            <SymbolView name="chevron.left" size={24} tintColor="#00000099" />
-          </TouchableOpacity>
-
           {/* Header */}
-          <View className="mt-16">
+          <View className="mt-0">
             <Text className="text-3xl font-extrabold tracking-tighter text-black">
               What should we know about you?
             </Text>
-            <Text className="text-base tracking-tight text-black/60 mt-2">
-              For best results, tell us what your favorite meals are and what you don't like
+            <Text className="text-base tracking-tighter text-secondary-placeholder mt-2">
+              For best results, tell us what your favorite meals are and what you don't like.
             </Text>
           </View>
 
@@ -227,7 +212,7 @@ export default function OnboardingProfileScreen() {
             numberOfLines={3}
             textAlignVertical="top"
             editable={!submitting}
-            className="w-full h-14 px-6 rounded-full bg-[#F7F7F7] text-base text-black mt-8"
+            className="w-full h-14 p-4 rounded-full bg-[#F7F7F7] text-base text-black mt-8"
           />
 
           {/* Submit Button */}
@@ -260,7 +245,7 @@ export default function OnboardingProfileScreen() {
           {/* Generated taste preference chips (after NLP) */}
           {generatedChips.length > 0 && (
             <View className="mt-6">
-              <Text className="text-sm text-black/60 mb-2">Your taste profile</Text>
+              <Text className="text-sm text-black/60 mb-2">Your preferences</Text>
               <View className="flex-row flex-wrap gap-2">
                 {generatedChips.map((label, index) => (
                   <View
