@@ -28,7 +28,12 @@ export function parseAnswerXml(xml: string): ParsedAnswer | null {
       const id = itemContent.match(/<id>(.*?)<\/id>/)?.[1]?.trim() ?? ''
       const title = itemContent.match(/<title>(.*?)<\/title>/)?.[1]?.trim() ?? ''
       const caption = itemContent.match(/<caption>(.*?)<\/caption>/)?.[1]?.trim() ?? ''
-      const image = itemContent.match(/<image>(.*?)<\/image>/)?.[1]?.trim() ?? ''
+      let image = itemContent.match(/<image>(.*?)<\/image>/)?.[1]?.trim() ?? ''
+      
+      // Normalize "undefined" string to empty string so we fetch from database
+      if (image === 'undefined' || image === 'null') {
+        image = ''
+      }
 
       if (id && title) {
         items.push({ id, title, caption, image })
