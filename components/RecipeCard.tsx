@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { View, Text, Image, Pressable } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
@@ -36,6 +36,11 @@ export default function RecipeCard({
   const router = useRouter()
   const [isAdded, setIsAdded] = useState(false)
   const [imageError, setImageError] = useState(false)
+
+  // Reset error state when image URL changes so a newly fetched URL can display
+  useEffect(() => {
+    setImageError(false)
+  }, [image])
 
   const getContainerClasses = () => {
     switch (cardType) {

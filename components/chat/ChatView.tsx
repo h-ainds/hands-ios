@@ -4,10 +4,9 @@ import {
   Text,
   ScrollView,
   FlatList,
-  Pressable,
 } from 'react-native'
 import { useRouter } from 'expo-router'
-import RecipeCard from '@/components/RecipeCard'
+import RecipeCardWithImage from '@/components/chat/RecipeCardWithImage'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -103,15 +102,7 @@ export default function ChatView({
                         contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
                         keyExtractor={item => item.id}
                         renderItem={({ item }) => (
-                          <Pressable onPress={() => router.push(`/recipe/${item.id}`)}>
-                            <RecipeCard
-                              id={item.id}
-                              title={item.title}
-                              image={item.image}
-                              cardType="vertical"
-                              showActionButton={false}
-                            />
-                          </Pressable>
+                          <RecipeCardWithImage item={item} />
                         )}
                       />
                     </View>
