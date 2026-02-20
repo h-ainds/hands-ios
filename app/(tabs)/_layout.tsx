@@ -1,19 +1,21 @@
 import { Tabs, router, usePathname } from "expo-router";
-import { View, Pressable } from "react-native";
+import { View, Pressable, Text } from "react-native";
 import { SymbolView } from "expo-symbols";
 
 export default function TabsLayout() {
   const pathname = usePathname();
+
   const isHomeActive =
     pathname === "/home" || pathname?.startsWith("/recipe/");
-    const isProfileActive = pathname?.startsWith("/you");
+  const isProfileActive = pathname?.startsWith("/you");
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
         tabBarStyle: {
-          height: 88,
+          height: 90,
           backgroundColor: "#FFF",
           borderTopWidth: 0,
         },
@@ -22,7 +24,7 @@ export default function TabsLayout() {
         },
       }}
     >
-      {/* Search / Home */}
+      {/* HOME */}
       <Tabs.Screen
         name="home"
         options={{
@@ -35,17 +37,30 @@ export default function TabsLayout() {
                 justifyContent: "center",
               }}
             >
-              <SymbolView
-                name="house.fill"
-                size={26}
-                tintColor={isHomeActive ? "#000" : "#9F9F9F"}
-              />
+              <View
+                style={{
+                  paddingHorizontal: 20,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  backgroundColor: isHomeActive ? "#f7f7f7" : "transparent",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontWeight: isHomeActive ? "700" : "700",
+                    color: isHomeActive ? "#000" : "#9F9F9F",
+                  }}
+                >
+                  Home
+                </Text>
+              </View>
             </Pressable>
           ),
         }}
       />
 
-      {/* Center + Ask */}
+      {/* CENTER + ASK (unchanged) */}
       <Tabs.Screen
         name="index"
         options={{
@@ -72,7 +87,7 @@ export default function TabsLayout() {
                   name="plus"
                   size={20}
                   tintColor="#FFFFFF"
-                  weight="semibold"
+                  weight="regular"
                 />
               </Pressable>
             </View>
@@ -83,7 +98,7 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* Profile */}
+      {/* YOU */}
       <Tabs.Screen
         name="you"
         options={{
@@ -96,11 +111,26 @@ export default function TabsLayout() {
                 justifyContent: "center",
               }}
             >
-              <SymbolView
-                name="person.circle.fill"
-                size={26}
-                tintColor={isProfileActive ? "#000000" : "#9F9F9F"}
-              />
+              <View
+                style={{
+                  paddingHorizontal: 20,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  backgroundColor: isProfileActive
+                    ? "#f7f7f7"
+                    : "transparent",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontWeight: isProfileActive ? "700" : "700",
+                    color: isProfileActive ? "#000" : "#9F9F9F",
+                  }}
+                >
+                  You
+                </Text>
+              </View>
             </Pressable>
           ),
         }}

@@ -249,10 +249,10 @@ export default function SignupScreen() {
             </TouchableOpacity>
 
             <View className="mt-8">
-              <Text className="text-3xl font-extrabold text-black">
+              <Text className="text-3xl font-extrabold text-black tracking-tighter">
                 Create your account
               </Text>
-              <Text className="text-black/60 mt-1">
+              <Text className="text-secondary-muted mt-1">
                 Enter your details to get started.
               </Text>
             </View>
@@ -310,7 +310,7 @@ export default function SignupScreen() {
             </TouchableOpacity>
 
             <View className="flex-row justify-center mt-6">
-              <Text className="text-black/60">
+              <Text className="text-secondary-placeholder">
                 Already have an account?
               </Text>
               <Link href="/login" asChild>

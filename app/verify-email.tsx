@@ -45,9 +45,9 @@ export default function VerifyEmailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white">
-      <View className="flex-1 px-6 justify-center">
+      <View className="flex-1 px-6 pt-32 justify-start">
         <Text className="text-3xl font-extrabold text-black text-center">Verify your email</Text>
-        <Text className="text-black/60 text-center mt-2">Enter the 6-digit code sent to</Text>
+        <Text className="text-secondary-placeholder text-center mt-2">Enter the 6-digit code sent to</Text>
         <Text className="text-black text-center font-semibold mt-1">{email}</Text>
 
         <TextInput
