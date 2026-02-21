@@ -196,6 +196,11 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
 
       const functionUrl = `${supabaseUrl}/functions/v1/stream`
 
+      // Build conversation history (last 10 messages for context)
+      const conversationHistory = messages
+        .slice(-10) // Get last 10 messages for context
+        .map(msg => ({ role: msg.role, content: msg.content }))
+
       // Make POST request to streaming endpoint
       const response = await fetch(functionUrl, {
         method: 'POST',
@@ -205,7 +210,10 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
           'apikey': anonKey,
           'Authorization': `Bearer ${session?.access_token || anonKey}`,
         },
-        body: JSON.stringify({ prompt: userMessage }),
+        body: JSON.stringify({ 
+          prompt: userMessage,
+          conversationHistory: conversationHistory
+        }),
         signal: abortControllerRef.current.signal,
       })
 
@@ -219,7 +227,7 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
       }
 
       // Read stream as text (React Native compatible)
-      const fullResponse = await response.text()
+      let fullResponse = await response.text()
 
       clearTimeout(timeoutId)
 
@@ -228,6 +236,13 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
       console.log('[Stream] Response (first 500 chars):', fullResponse.substring(0, 500))
 
       if (!isMountedRef.current) return
+
+      // If response doesn't start with XML, wrap it in XML structure
+      // This handles cases where AI outputs plain text instead of XML
+      if (fullResponse && !fullResponse.trim().startsWith('<answer>')) {
+        console.log('[useRecipeChat] Response is not XML, wrapping it')
+        fullResponse = `<answer><text>${fullResponse.trim()}</text><items></items></answer>`
+      }
 
       if (isMountedRef.current) {
         setStatus('typing')
