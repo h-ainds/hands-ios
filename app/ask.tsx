@@ -173,8 +173,8 @@ export default function AskScreen() {
 
             {isLoading && (
               <View className="items-center mt-2">
-                <Text className="text-xs text-gray-400">
-                  {status === 'connecting' && 'Connecting...'}
+                <Text className="text-xs text-secondary-placeholder">
+                  {status === 'connecting' && 'Getting recipes...'}
                   {status === 'streaming' && 'Getting recipes...'}
                   {status === 'typing' && 'Typing...'}
                 </Text>
