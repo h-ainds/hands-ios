@@ -31,7 +31,7 @@ export default function HomeScreen() {
         const { data, error } = await supabase
           .from('recipes')
           .select('*')
-          .limit(500)
+          .limit(1000)
         
         if (error) throw error
         
