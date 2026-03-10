@@ -96,7 +96,7 @@ export default function RecipeDetailScreen() {
   </Text>
 )}
 
-        {/* Caption - moved after tags */}
+        {/* Caption */}
         {recipe.caption ? (
           <View className="relative mb-3">
             <Text
@@ -129,7 +129,7 @@ export default function RecipeDetailScreen() {
         {/* Ingredients - supports both flat and grouped formats */}
         {hasIngredients && (
           <View className="mt-4">
-            <Text className="text-2xl font-bold mb-3">Ingredients</Text>
+            <Text className="text-2xl tracking-tighter font-bold mb-3">Ingredients</Text>
             {Object.entries(ingredientsGrouped).map(([groupName, items]) => (
               <View key={groupName} className="mb-4">
                 {/* Only render subheading if it's a named group (not the flat '' key) */}
@@ -147,16 +147,21 @@ export default function RecipeDetailScreen() {
           </View>
         )}
 
-        {recipe.steps && recipe.steps.length > 0 && (
-          <View className="mt-6">
-            <Text className="text-2xl font-bold mb-3">Steps</Text>
-            {recipe.steps.map((step, index) => (
-              <Text key={index} className="text-base mb-3 leading-6">
-                {index + 1}. {step}
-              </Text>
-            ))}
-          </View>
-        )}
+{recipe.steps && recipe.steps.length > 0 && (
+  <View className="mt-6">
+    <Text className="text-2xl font-bold mb-3 tracking-tighter">Steps</Text>
+    {recipe.steps.map((step, index) => (
+      <View key={index} className="mb-6">
+        <Text className="text-2xl font-extrabold text-secondary-active leading-none mb-1">
+          {index + 1}
+        </Text>
+        <Text className="text-base leading-6 text-black">
+          {step}
+        </Text>
+      </View>
+    ))}
+  </View>
+)}
 
 {recipe.url && (
   <View className="mt-6 mb-6">
