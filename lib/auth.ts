@@ -397,3 +397,12 @@ export async function createTasteProfile(
     throw new Error((error as AuthError).message || 'Failed to create taste profile')
   }
 }
+
+// Update only taste_preferences for a user (used by Memory screen)
+export async function updateTastePreferences(userId: string, preferences: string[]): Promise<void> {
+  const { error } = await supabase
+    .from('UserTasteProfiles')
+    .update({ taste_preferences: preferences })
+    .eq('id', userId)
+  if (error) throw new Error((error as AuthError).message || 'Failed to update preferences')
+}
