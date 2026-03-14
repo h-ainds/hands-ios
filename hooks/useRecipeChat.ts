@@ -241,10 +241,13 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
 
       // Always extract clean display text — never show raw XML
       const extractDisplayText = (raw: string): string => {
-        const m = raw.match(/<text>([\s\S]*?)<\/text>/)
+        // Try well-formed </text> first, then fall back to stopping at <items>
+        const m = raw.match(/<text>([\s\S]*?)(?:<\/text>|<items>)/)
         if (m?.[1]?.trim()) return m[1].trim()
-        // No <text> tag — strip all XML tags
-        return raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+        // Last resort: grab everything after <text> until the next tag
+        const m2 = raw.match(/<text>([^<]+)/)
+        if (m2?.[1]?.trim()) return m2[1].trim()
+        return ''
       }
 
       const displayText = extractDisplayText(cleanXml) || "I couldn't find any recipes for that. Try asking differently!"
