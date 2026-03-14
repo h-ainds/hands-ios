@@ -233,15 +233,27 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
         setStatus('typing')
       }
 
-      // Parse the XML response
-      console.log('[useRecipeChat] Full response:', fullResponse)
       // Strip markdown code fences if LLM wraps output in them
-      const cleanedResponse = fullResponse
+      const cleanXml = fullResponse
         .replace(/^```(?:xml)?\s*/i, '')
         .replace(/\s*```$/i, '')
         .trim()
-      const parsed = parseAnswerXml(cleanedResponse)
-      console.log('[useRecipeChat] Parsed XML:', JSON.stringify(parsed, null, 2))
+
+      // Always extract clean display text — never show raw XML
+      const extractDisplayText = (raw: string): string => {
+        const m = raw.match(/<text>([\s\S]*?)<\/text>/)
+        if (m?.[1]?.trim()) return m[1].trim()
+        // No <text> tag — strip all XML tags
+        return raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      }
+
+      const displayText = extractDisplayText(cleanXml) || "I couldn't find any recipes for that. Try asking differently!"
+
+      // Parse items for recipe cards (separate from display)
+      const parsed = parseAnswerXml(cleanXml)
+      console.log('[useRecipeChat] displayText:', displayText)
+      console.log('[useRecipeChat] Parsed items:', parsed?.items?.length ?? 0)
+
       let assistantMessageIndex = -1
 
       // Add empty assistant message for typing effect
@@ -252,51 +264,24 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
         })
       }
 
-      // Extract display text: prefer parsed, fallback to stripping XML tags
-      const extractFallbackText = (raw: string): string => {
-        const textMatch = raw.match(/<text>([\s\S]*?)<\/text>/)
-        if (textMatch) return textMatch[1].trim()
-        return raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-      }
+      // Type out ONLY the clean display text
+      await typeAssistantText(displayText)
 
-      const aiResponse = parsed?.text || extractFallbackText(cleanedResponse)
-
-      // Type out the response
-      if (parsed && parsed.text) {
-        await typeAssistantText(parsed.text)
-
-        // Add recipe cards if present
-        if (parsed.items && parsed.items.length > 0 && isMountedRef.current) {
-          console.log('[useRecipeChat] Adding recipe cards:', parsed.items.length, 'items')
-          setRecipeCards(prev => [
-            ...prev,
-            {
-              messageIndex: assistantMessageIndex,
-              recipes: parsed,
-            },
-          ])
-        } else {
-          console.log('[useRecipeChat] No recipe items to add. Items:', parsed?.items)
-        }
-      } else if (cleanedResponse) {
-        // Parsing failed or text was empty — strip XML tags before displaying
-        await typeAssistantText(extractFallbackText(cleanedResponse))
-      } else {
-        // Empty response
-        if (isMountedRef.current) {
-          setMessages(prev =>
-            prev.map((msg, idx) =>
-              idx === prev.length - 1
-                ? { ...msg, content: "I couldn't find any recipes for that. Try asking differently!" }
-                : msg
-            )
-          )
-        }
+      // Add recipe cards if items were parsed
+      if (parsed?.items && parsed.items.length > 0 && isMountedRef.current) {
+        console.log('[useRecipeChat] Adding recipe cards:', parsed.items.length, 'items')
+        setRecipeCards(prev => [
+          ...prev,
+          {
+            messageIndex: assistantMessageIndex,
+            recipes: parsed,
+          },
+        ])
       }
 
       // Save assistant message to conversation
       if (activeConversationId) {
-        await saveMessageToConversation(activeConversationId, 'assistant', aiResponse, parsed || undefined)
+        await saveMessageToConversation(activeConversationId, 'assistant', displayText, parsed || undefined)
       }
 
       if (isMountedRef.current) {
