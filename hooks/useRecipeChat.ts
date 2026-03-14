@@ -235,7 +235,12 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
 
       // Parse the XML response
       console.log('[useRecipeChat] Full response:', fullResponse)
-      const parsed = parseAnswerXml(fullResponse)
+      // Strip markdown code fences if LLM wraps output in them
+      const cleanedResponse = fullResponse
+        .replace(/^```(?:xml)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim()
+      const parsed = parseAnswerXml(cleanedResponse)
       console.log('[useRecipeChat] Parsed XML:', JSON.stringify(parsed, null, 2))
       let assistantMessageIndex = -1
 
@@ -247,7 +252,14 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
         })
       }
 
-      const aiResponse = parsed ? parsed.text : fullResponse
+      // Extract display text: prefer parsed, fallback to stripping XML tags
+      const extractFallbackText = (raw: string): string => {
+        const textMatch = raw.match(/<text>([\s\S]*?)<\/text>/)
+        if (textMatch) return textMatch[1].trim()
+        return raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      }
+
+      const aiResponse = parsed?.text || extractFallbackText(cleanedResponse)
 
       // Type out the response
       if (parsed && parsed.text) {
@@ -266,9 +278,9 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
         } else {
           console.log('[useRecipeChat] No recipe items to add. Items:', parsed?.items)
         }
-      } else if (fullResponse) {
-        // No parsed structure, type out raw response
-        await typeAssistantText(fullResponse)
+      } else if (cleanedResponse) {
+        // Parsing failed or text was empty — strip XML tags before displaying
+        await typeAssistantText(extractFallbackText(cleanedResponse))
       } else {
         // Empty response
         if (isMountedRef.current) {
