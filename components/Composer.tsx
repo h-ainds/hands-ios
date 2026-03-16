@@ -6,13 +6,14 @@ type ComposerProps = {
   onAskPress?: () => void;
   onSearchPress?: () => void;
   onYouPress?: () => void;
+  onScanPress?: () => void;
 };
 
-const Composer = ({ onAskPress, onSearchPress, onYouPress }: ComposerProps) => {
+const Composer = ({ onAskPress, onSearchPress, onYouPress, onScanPress }: ComposerProps) => {
   return (
     <View className="flex-row items-center px-4">
       {/* Left Button - You */}
-      <Pressable 
+      <Pressable
         onPress={onYouPress}
         className="rounded-full bg-secondary px-4 py-4 items-center justify-center mr-3"
       >
@@ -45,6 +46,16 @@ const Composer = ({ onAskPress, onSearchPress, onYouPress }: ComposerProps) => {
           weight="semibold"
         />
       </Pressable>
+
+      {/* Camera Button - only rendered if onScanPress is provided */}
+      {onScanPress && (
+        <Pressable
+          onPress={onScanPress}
+          className="rounded-full bg-secondary px-4 py-4 items-center justify-center ml-3"
+        >
+          <SymbolView name="camera.fill" size={18} tintColor="#9F9F9F" />
+        </Pressable>
+      )}
     </View>
   );
 };

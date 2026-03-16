@@ -130,6 +130,10 @@ export default function HomeScreen() {
     router.push('/you')
   }
 
+  const handleScanPress = () => {
+    router.push('/scan')
+  }
+
   return (
     <View className="flex-1 bg-white">
       {/* Chat History Button - Top Left */}
@@ -272,10 +276,11 @@ export default function HomeScreen() {
 
       {/* Composer Fixed at Bottom */}
       <View className="absolute flex-row items-center bottom-4">
-        <Composer 
+        <Composer
           onAskPress={handleAskPress}
           onSearchPress={handleSearchPress}
           onYouPress={handleYouPress}
+          onScanPress={handleScanPress}
         />
       </View>
       
