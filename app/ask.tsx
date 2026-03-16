@@ -107,7 +107,7 @@ export default function AskScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
-      <BackButton />
+{isChatStarted && <BackButton />}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
@@ -117,12 +117,14 @@ export default function AskScreen() {
           <View className="px-4 pt-3">
             <View className="flex-row items-center gap-3">
               {/* Back */}
-              <Pressable
-                onPress={handleBack}
-                className="w-10 h-10 rounded-full bg-white items-center justify-center shadow-hands"
-              >
-                <SymbolView name="chevron.left" size={20} tintColor="#000000" />
-              </Pressable>
+              {!isChatStarted && (
+  <Pressable
+    onPress={handleBack}
+    className="w-10 h-10 rounded-full bg-white items-center justify-center shadow-hands"
+  >
+    <SymbolView name="chevron.left" size={20} tintColor="#000000" />
+  </Pressable>
+)}
 
               {/* Input */}
               <View className="flex-1 flex-row items-center bg-white rounded-full px-4 py-2.5 shadow-hands">
@@ -153,8 +155,8 @@ export default function AskScreen() {
 
         {/* Bottom Input */}
         {isChatStarted && (
-          <View className="px-12 pb-12 pt-2 bg-white/80">
-            <View className="flex-row items-end bg-[#F7F7F7] rounded-full px-4 py-2.5">
+          <View className="px-12 pb-12 pt-2 bg-transparent">
+            <View className="flex-row items-end bg-[#F7F7F7] rounded-full px-4 py-3">
               <TextInput
                 value={input}
                 onChangeText={setInput}

@@ -38,54 +38,59 @@ export default function RecipeCard({
   const [isAdded, setIsAdded] = useState(false)
   const [imageError, setImageError] = useState(false)
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined)
+  const [dbFetched, setDbFetched] = useState(false)
 
-  // Fetch image from database if image prop is missing/empty but id is provided
+  // Use image prop if valid, otherwise fetch from DB
   useEffect(() => {
-    // If we have an image prop that's not empty and not "undefined", use it
+    const cancelled = { value: false }
     const trimmedImage = image?.trim()
-    // Treat "undefined" and "null" strings as if there's no image
     if (trimmedImage && trimmedImage !== 'undefined' && trimmedImage !== 'null') {
       setImageUrl(trimmedImage)
-      return
-    }
-
-    // If no image but we have an id, fetch from database
-    if (id) {
-      let cancelled = false
-      // Convert id to number if it's a string (database uses numeric IDs)
-      // Supabase can handle both, but being explicit helps
+      setImageError(false)
+      setDbFetched(false)
+    } else if (id) {
       const recipeId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-      
       supabase
         .from('recipes')
         .select('image')
         .eq('id', recipeId)
         .maybeSingle()
         .then(({ data, error }) => {
-          if (!cancelled) {
-            if (error) {
-              console.error('Error fetching recipe image:', error)
-            } else if (data?.image) {
-              setImageUrl(data.image)
-            }
+          if (!cancelled.value) {
+            if (error) console.error('Error fetching recipe image:', error)
+            else if (data?.image) setImageUrl(data.image)
           }
         })
-        .catch((err) => {
-          if (!cancelled) {
-            console.error('Error fetching recipe image:', err)
-          }
-        })
-      return () => { cancelled = true }
-    } else {
-      // No id and no image, clear imageUrl
-      setImageUrl(undefined)
+        .catch((err) => { if (!cancelled.value) console.error('Error fetching recipe image:', err) })
     }
+    return () => { cancelled.value = true }
   }, [id, image])
 
-  // Reset error state when image URL changes so a newly fetched URL can display
+  // If the image URL fails to load and we haven't tried the DB yet, fall back to DB
   useEffect(() => {
-    setImageError(false)
-  }, [imageUrl])
+    if (!imageError || dbFetched || !id) return
+    setDbFetched(true)
+    const cancelled = { value: false }
+    const recipeId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
+    supabase
+      .from('recipes')
+      .select('image')
+      .eq('id', recipeId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!cancelled.value) {
+          if (error) console.error('Error fetching recipe image:', error)
+          else if (data?.image) {
+            setImageError(false)
+            setImageUrl(data.image)
+          }
+        }
+      })
+      .catch((err) => {
+        if (!cancelled.value) console.error('Error fetching recipe image:', err)
+      })
+    return () => { cancelled.value = true }
+  }, [imageError])
 
   const getContainerClasses = () => {
     switch (cardType) {

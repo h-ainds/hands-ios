@@ -9,6 +9,8 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
@@ -148,109 +150,119 @@ export default function MemoryScreen() {
     <SafeAreaView className="flex-1 bg-white">
       <BackButton />
 
-      <View className="p-4 pt-20">
-        <Text className="text-2xl font-bold text-black mb-6">Memory</Text>
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ padding: 16, paddingTop: 80 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+        >
+          <Text className="text-2xl font-bold text-black mb-6">Memory</Text>
 
-        {loading ? (
-          <ActivityIndicator size="small" className="py-4" />
-        ) : (
-          <>
-            <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-sm text-black/60">Preferences</Text>
-              <TouchableOpacity
-                onPress={handleAdd}
-                disabled={list.length >= MAX_CHIPS || saving}
-                className="rounded-full bg-primary px-4 py-2"
-                style={{ opacity: list.length >= MAX_CHIPS || saving ? 0.5 : 1 }}
-              >
-                <Text className="text-white font-semibold">Add</Text>
-              </TouchableOpacity>
-            </View>
+          {loading ? (
+            <ActivityIndicator size="small" className="py-4" />
+          ) : (
+            <>
+              <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-sm text-black/60">Preferences</Text>
+                <TouchableOpacity
+                  onPress={handleAdd}
+                  disabled={list.length >= MAX_CHIPS || saving}
+                  className="rounded-full bg-primary px-4 py-2"
+                  style={{ opacity: list.length >= MAX_CHIPS || saving ? 0.5 : 1 }}
+                >
+                  <Text className="text-white font-semibold">Add</Text>
+                </TouchableOpacity>
+              </View>
 
-            <View className="flex-row flex-wrap gap-2">
-              {list.map((label, index) =>
-                editingIndex === index ? (
-                  <View key={`edit-${index}`} className="w-full max-w-md rounded-2xl bg-[#F7F7F7] p-3">
+              <View className="flex-row flex-wrap gap-2">
+                {list.map((label, index) =>
+                  editingIndex === index ? (
+                    <View key={`edit-${index}`} className="w-full max-w-md rounded-2xl bg-[#F7F7F7] p-3">
+                      <TextInput
+                        value={editDraft}
+                        onChangeText={onEditDraftChange}
+                        placeholder="Edit preference (max 25 words)"
+                        placeholderTextColor="#9CA3AF"
+                        className="text-base text-black min-h-[44px]"
+                        multiline
+                        autoFocus
+                      />
+                      <Text className="text-xs text-black/50 mt-1">
+                        {editWords}/{MAX_WORDS} words
+                        {editWords >= MAX_WORDS && ' — Maximum 25 words per preference'}
+                      </Text>
+                      <View className="flex-row gap-2 mt-2">
+                        <TouchableOpacity onPress={handleSaveEdit} className="bg-primary rounded-full px-3 py-1.5">
+                          <Text className="text-white text-sm font-medium">Save</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleCancelEdit} className="bg-black/10 rounded-full px-3 py-1.5">
+                          <Text className="text-black text-sm">Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <View
+                      key={`${index}-${label}`}
+                      className="flex-row items-center rounded-full bg-secondary pl-4 pr-2 py-2.5 gap-2 self-start max-w-full"
+                    >
+                      <View className="flex-1 mr-1" style={{ minWidth: 100 }}>
+                        <Text className="text-base text-black/90" numberOfLines={3}>
+                          {label}
+                        </Text>
+                      </View>
+                      <TouchableOpacity onPress={() => handleEdit(index)} className="p-1.5">
+                        <SymbolView name="pencil" size={16} tintColor="#374151" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleDelete(index)} className="p-1.5">
+                        <SymbolView name="xmark" size={16} tintColor="#6B7280" />
+                      </TouchableOpacity>
+                    </View>
+                  )
+                )}
+
+                {addDraft != null && (
+                  <View className="w-full max-w-md rounded-2xl bg-[#F7F7F7] p-3">
                     <TextInput
-                      value={editDraft}
-                      onChangeText={onEditDraftChange}
-                      placeholder="Edit preference (max 25 words)"
+                      value={addDraft}
+                      onChangeText={onAddDraftChange}
+                      placeholder="New preference (max 25 words)"
                       placeholderTextColor="#9CA3AF"
                       className="text-base text-black min-h-[44px]"
                       multiline
                       autoFocus
                     />
                     <Text className="text-xs text-black/50 mt-1">
-                      {editWords}/{MAX_WORDS} words
-                      {editWords >= MAX_WORDS && ' — Maximum 25 words per preference'}
+                      {addWords}/{MAX_WORDS} words
+                      {addWords >= MAX_WORDS && ' — Maximum 25 words per preference'}
                     </Text>
                     <View className="flex-row gap-2 mt-2">
-                      <TouchableOpacity onPress={handleSaveEdit} className="bg-primary rounded-full px-3 py-1.5">
-                        <Text className="text-white text-sm font-medium">Save</Text>
+                      <TouchableOpacity
+                        onPress={handleSaveNew}
+                        disabled={!addDraft.trim() || addWords > MAX_WORDS}
+                        className="bg-primary rounded-full px-3 py-1.5"
+                        style={{ opacity: !addDraft.trim() || addWords > MAX_WORDS ? 0.5 : 1 }}
+                      >
+                        <Text className="text-white text-sm font-medium">Add</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={handleCancelEdit} className="bg-black/10 rounded-full px-3 py-1.5">
+                      <TouchableOpacity onPress={handleCancelAdd} className="bg-black/10 rounded-full px-3 py-1.5">
                         <Text className="text-black text-sm">Cancel</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
-                ) : (
-                  <View
-                    key={`${index}-${label}`}
-                    className="flex-row items-center rounded-full bg-secondary pl-4 pr-2 py-2.5 gap-2 self-start max-w-full"
-                  >
-                    <View className="flex-1 mr-1" style={{ minWidth: 100 }}>
-                      <Text className="text-base text-black/90" numberOfLines={3}>
-                        {label}
-                      </Text>
-                    </View>
-                    <TouchableOpacity onPress={() => handleEdit(index)} className="p-1.5">
-                      <SymbolView name="pencil" size={16} tintColor="#374151" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDelete(index)} className="p-1.5">
-                      <SymbolView name="xmark" size={16} tintColor="#6B7280" />
-                    </TouchableOpacity>
-                  </View>
-                )
-              )}
+                )}
+              </View>
 
-              {addDraft != null && (
-                <View className="w-full max-w-md rounded-2xl bg-[#F7F7F7] p-3">
-                  <TextInput
-                    value={addDraft}
-                    onChangeText={onAddDraftChange}
-                    placeholder="New preference (max 25 words)"
-                    placeholderTextColor="#9CA3AF"
-                    className="text-base text-black min-h-[44px]"
-                    multiline
-                    autoFocus
-                  />
-                  <Text className="text-xs text-black/50 mt-1">
-                    {addWords}/{MAX_WORDS} words
-                    {addWords >= MAX_WORDS && ' — Maximum 25 words per preference'}
-                  </Text>
-                  <View className="flex-row gap-2 mt-2">
-                    <TouchableOpacity
-                      onPress={handleSaveNew}
-                      disabled={!addDraft.trim() || addWords > MAX_WORDS}
-                      className="bg-primary rounded-full px-3 py-1.5"
-                      style={{ opacity: !addDraft.trim() || addWords > MAX_WORDS ? 0.5 : 1 }}
-                    >
-                      <Text className="text-white text-sm font-medium">Add</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleCancelAdd} className="bg-black/10 rounded-full px-3 py-1.5">
-                      <Text className="text-black text-sm">Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+              {list.length === 0 && addDraft == null && !loading && (
+                <Text className="text-base text-black/40 mt-2">No preferences saved yet. Tap Add to create one.</Text>
               )}
-            </View>
-
-            {list.length === 0 && addDraft == null && !loading && (
-              <Text className="text-base text-black/40 mt-2">No preferences saved yet. Tap Add to create one.</Text>
-            )}
-          </>
-        )}
-      </View>
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }
