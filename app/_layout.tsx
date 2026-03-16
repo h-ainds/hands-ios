@@ -54,6 +54,7 @@ function RootLayoutNav() {
       <Stack.Screen name="verify-email" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding-profile" options={{ headerShown: false }} />
       <Stack.Screen name="memory" options={{ headerShown: false }} />
+      <Stack.Screen name="scan" options={{ headerShown: false }} />
     </Stack>
   )
 }
