@@ -3,11 +3,14 @@
     "version": ">= 16.31.0",
     "appVersionSource": "remote"
   },
-  "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal"
-    },
+"build": {
+"development": {
+  "developmentClient": true,
+  "distribution": "internal",
+  "ios": {
+    "bundleIdentifier": "com.handsai.hands.dev"
+  }
+},
     "ios-simulator": {
       "extends": "development",
       "ios": { 
