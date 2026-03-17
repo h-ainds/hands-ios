@@ -37,7 +37,7 @@ const Composer = ({ onAskPress, onSearchPress, onYouPress, onScanPress }: Compos
       {/* Right Button - Search */}
       <Pressable
         onPress={onSearchPress}
-        className="rounded-full bg-secondary px-4 py-4 items-center justify-center ml-3"
+        className="rounded-full bg-primary px-4 py-4 items-center justify-center ml-3"
       >
         <SymbolView
           name="magnifyingglass"
