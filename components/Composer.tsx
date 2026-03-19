@@ -34,19 +34,6 @@ const Composer = ({ onAskPress, onSearchPress, onYouPress, onScanPress }: Compos
         />
       </Pressable>
 
-      {/* Right Button - Search */}
-      <Pressable
-        onPress={onSearchPress}
-        className="rounded-full bg-primary px-4 py-4 items-center justify-center ml-3"
-      >
-        <SymbolView
-          name="magnifyingglass"
-          size={18}
-          tintColor="#9F9F9F"
-          weight="semibold"
-        />
-      </Pressable>
-
       {/* Camera Button - only rendered if onScanPress is provided */}
       {onScanPress && (
         <Pressable

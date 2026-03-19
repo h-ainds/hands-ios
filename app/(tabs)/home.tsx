@@ -159,6 +159,14 @@ export default function HomeScreen() {
       >
         <SymbolView name="text.alignleft" size={20} tintColor="#000000" />
       </Pressable>
+
+      {/* Search Button - Top Right */}
+<Pressable
+  onPress={handleSearchPress}
+  className="absolute top-14 right-4 w-11 h-11 rounded-full bg-white items-center justify-center z-50 shadow"
+>
+  <SymbolView name="magnifyingglass" size={20} tintColor="#000000" />
+</Pressable>
       
       <ScrollView className="flex-1" contentContainerClassName="pb-20">
         {/* Hero Section */}
