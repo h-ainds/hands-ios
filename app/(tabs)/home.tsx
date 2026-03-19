@@ -163,7 +163,7 @@ export default function HomeScreen() {
       {/* Search Button - Top Right */}
 <Pressable
   onPress={handleSearchPress}
-  className="absolute top-14 right-4 w-11 h-11 rounded-full bg-white items-center justify-center z-50 shadow"
+  className="absolute top-16 right-4 w-11 h-11 rounded-full bg-white items-center justify-center z-50"
 >
   <SymbolView name="magnifyingglass" size={20} tintColor="#000000" />
 </Pressable>
