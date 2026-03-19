@@ -2,12 +2,13 @@ import { View, Text, Pressable, ActivityIndicator, ScrollView } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
 import BackButton from '@/components/BackButton'
-import { useAnalyzeImage, type Ingredient, type ImageSource } from '@/hooks/useAnalyzeImage'
+import { useAnalyzeImage, type ImageSource } from '@/hooks/useAnalyzeImage'
+import RecipeCard from '@/components/RecipeCard'
 
 export default function ScanScreen() {
-  const { ingredients, status, error, isLoading, pickAndAnalyze, reset } = useAnalyzeImage()
+  const { recipes, status, error, isLoading, pickAndAnalyze, reset } = useAnalyzeImage()
 
-  const hasResults = ingredients.length > 0
+  const hasResults = recipes.length > 0
 
   const handlePick = (source: ImageSource) => {
     pickAndAnalyze(source)
@@ -103,42 +104,28 @@ export default function ScanScreen() {
         {!isLoading && hasResults && (
           <View>
             <Text className="text-xl font-bold tracking-tighter text-black mb-4">
-              {ingredients.length} ingredient{ingredients.length !== 1 ? 's' : ''} found
+              {recipes.length} recipe{recipes.length !== 1 ? 's' : ''} suggested
             </Text>
 
-            <View className="gap-2">
-              {ingredients.map((item: Ingredient, index: number) => (
-                <View
-                  key={index}
-                  className="flex-row items-center bg-secondary rounded-2xl px-4 py-3"
-                >
-                  {/* Confidence dot */}
-                  <View
-                    className="w-2 h-2 rounded-full mr-3"
-                    style={{
-                      backgroundColor:
-                        item.confidence === 'high'
-                          ? '#6CD401'
-                          : item.confidence === 'medium'
-                          ? '#F59E0B'
-                          : '#9F9F9F',
-                    }}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerClassName="gap-2.5"
+              className="mb-6"
+            >
+              {recipes.map((recipe) => (
+                <View key={recipe.id}>
+                  <RecipeCard
+                    id={recipe.id}
+                    title={recipe.title}
+                    image={recipe.image ?? undefined}
+                    cardType="vertical"
+                    rounded="xl"
+                    showActionButton={false}
                   />
-
-                  {/* Name */}
-                  <Text className="flex-1 text-base font-semibold text-black capitalize">
-                    {item.name}
-                  </Text>
-
-                  {/* Category pill */}
-                  <View className="bg-primary-muted rounded-full px-2 py-0.5">
-                    <Text className="text-xs text-primary font-medium capitalize">
-                      {item.category}
-                    </Text>
-                  </View>
                 </View>
               ))}
-            </View>
+            </ScrollView>
 
             {/* Scan Again */}
             <Pressable

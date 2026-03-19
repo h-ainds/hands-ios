@@ -8,12 +8,21 @@ export interface Ingredient {
   confidence: 'high' | 'medium' | 'low'
 }
 
+export interface SuggestedRecipe {
+  id: string
+  title: string
+  image: string | null
+  requiredIngredients: string[]
+  estimatedCookTimeMinutes: number
+  description: string
+}
+
 export type ImageSource = 'camera' | 'library'
 
 export type AnalyzeStatus = 'idle' | 'picking' | 'analyzing' | 'error'
 
 interface AnalyzeImageResponse {
-  ingredients: Ingredient[]
+  recipes: SuggestedRecipe[]
 }
 
 interface UseAnalyzeImageOptions {
@@ -21,7 +30,7 @@ interface UseAnalyzeImageOptions {
 }
 
 interface UseAnalyzeImageReturn {
-  ingredients: Ingredient[]
+  recipes: SuggestedRecipe[]
   status: AnalyzeStatus
   error: Error | null
   isLoading: boolean
@@ -32,7 +41,7 @@ interface UseAnalyzeImageReturn {
 export function useAnalyzeImage(options: UseAnalyzeImageOptions = {}): UseAnalyzeImageReturn {
   const { onError } = options
 
-  const [ingredients, setIngredients] = useState<Ingredient[]>([])
+  const [recipes, setRecipes] = useState<SuggestedRecipe[]>([])
   const [status, setStatus] = useState<AnalyzeStatus>('idle')
   const [error, setError] = useState<Error | null>(null)
 
@@ -50,7 +59,7 @@ export function useAnalyzeImage(options: UseAnalyzeImageOptions = {}): UseAnalyz
 
     setStatus('picking')
     setError(null)
-    setIngredients([])
+    setRecipes([])
 
     try {
       // Request permissions
@@ -138,7 +147,7 @@ export function useAnalyzeImage(options: UseAnalyzeImageOptions = {}): UseAnalyz
       const data: AnalyzeImageResponse = await response.json()
 
       if (isMountedRef.current) {
-        setIngredients(data.ingredients)
+        setRecipes(Array.isArray(data.recipes) ? data.recipes : [])
         setStatus('idle')
       }
     } catch (err) {
@@ -158,14 +167,14 @@ export function useAnalyzeImage(options: UseAnalyzeImageOptions = {}): UseAnalyz
 
   const reset = useCallback(() => {
     if (isMountedRef.current) {
-      setIngredients([])
+      setRecipes([])
       setStatus('idle')
       setError(null)
     }
   }, [])
 
   return {
-    ingredients,
+    recipes,
     status,
     error,
     isLoading: status === 'picking' || status === 'analyzing',
