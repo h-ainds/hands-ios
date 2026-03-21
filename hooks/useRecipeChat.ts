@@ -51,6 +51,11 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
+  const messagesRef = useRef<ChatMessage[]>([])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -194,7 +199,7 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
         throw new Error('Supabase configuration missing')
       }
 
-      const functionUrl = `${supabaseUrl}/functions/v1/stream`
+      const functionUrl = `${supabaseUrl}/functions/v1/streamv2`
 
       // Make POST request to streaming endpoint
       const response = await fetch(functionUrl, {
@@ -205,7 +210,13 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
           'apikey': anonKey,
           'Authorization': `Bearer ${session?.access_token || anonKey}`,
         },
-        body: JSON.stringify({ prompt: userMessage }),
+        body: JSON.stringify({
+          prompt: userMessage,
+          history: messagesRef.current
+            .filter(m => m.role === 'user')
+            .slice(-2)
+            .map(m => m.content),
+        }),
         signal: abortControllerRef.current.signal,
       })
 
@@ -225,7 +236,8 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
 
       if (!isMountedRef.current) return
 
-      console.log('[Stream] Response (first 500 chars):', fullResponse.substring(0, 500))
+      console.log('[Stream] Response length:', fullResponse.length)
+      console.log('[Stream] Response (first 1500 chars):', fullResponse.substring(0, 1500))
 
       if (!isMountedRef.current) return
 
