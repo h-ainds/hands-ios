@@ -243,10 +243,11 @@ Deno.serve(async (req) => {
         try {
           const embedding = await generateEmbedding(contextualQuery, openaiKey)
 
-          // Fetch more candidates (15) so the dietary filter has enough to work with
+          // Fetch extra candidates only when dietary filtering is active,
+          // so the filter has enough recipes to find 6 compliant ones
           const { data: rawRecipes, error: rpcError } = await supabaseAdmin.rpc("match_recipes", {
             query_embedding: embedding,
-            match_count: 15,
+            match_count: tastePreferences.length > 0 ? 15 : 6,
           })
 
           if (rpcError) {
