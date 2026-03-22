@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase/client'
 import { asyncStorage } from '@/lib/storage'
+import { getAuthCallbackRedirectUrl, getEmailConfirmationRedirectUrl } from '@/lib/auth-redirect'
 
 export interface AuthError extends Error {
   message: string
@@ -23,19 +24,23 @@ export interface ResendEmailResult {
   nextResendTime?: Date
 }
 
-// Sign up new user with email verification
-// EMAIL VERIFICATION DISABLED: To re-enable email verification:
-// 1. Uncomment the emailRedirectTo option below
-// 2. Go to Supabase Dashboard > Authentication > Settings
-// 3. Enable "Confirm email" under Email Auth settings
-// 4. Uncomment the verification step in app/signup.tsx (line 129-138)
+// Sign up new user. Confirmation email is sent only if Supabase has
+// Authentication → Providers → Email → "Confirm email" turned ON.
+// emailRedirectTo must be allowlisted (same as OAuth): exp://**, handsios://**, web origin, etc.
 export async function signUp({ email, password, firstName }: SignUpData) {
   try {
-    console.log('[Auth] Calling supabase.auth.signUp (email verification disabled)')
+    const emailRedirectTo = getEmailConfirmationRedirectUrl()
+    console.log('[Auth] signUp emailRedirectTo:', emailRedirectTo)
 
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        emailRedirectTo,
+        data: {
+          first_name: firstName,
+        },
+      },
     })
     
 
@@ -68,6 +73,23 @@ export async function signUp({ email, password, firstName }: SignUpData) {
       throw new Error('An account with this email already exists. Please try signing in instead.')
     }
 
+    // Supabase hides duplicate signups: user object, no session, identities: []. No email sent.
+    const identities = data.user?.identities ?? []
+    if (data.user && !data.session && identities.length === 0) {
+      console.warn(
+        '[Auth] Empty identities on signUp — email likely already registered; no signup confirmation email.'
+      )
+      throw new Error(
+        'This email is already registered. Sign in with your password, or use a different email. (No verification email is sent for existing accounts.)'
+      )
+    }
+
+    if (data.session && data.user) {
+      console.warn(
+        '[Auth] signUp returned a session immediately — Supabase "Confirm email" is OFF; no confirmation email.'
+      )
+    }
+
     // Store signup data in AsyncStorage for use after email verification
     if (data.user) {
       console.log('[Auth] Storing signup data for user:', data.user.id)
@@ -80,8 +102,11 @@ export async function signUp({ email, password, firstName }: SignUpData) {
     return {
       user: data.user,
       session: data.session,
-      needsEmailVerification: !data.session && !!data.user, // Email verification disabled - re-enable with: !data.session && data.user
-      signupData: { firstName, email }
+      // No session until they confirm email (when "Confirm email" is enabled in Supabase).
+      needsEmailVerification: !data.session && !!data.user,
+      /** True when Supabase auto-confirms (no confirmation email is sent). */
+      skippedEmailConfirmation: !!data.session,
+      signupData: { firstName, email },
     }
   } catch (error: any) {
     console.error('[Auth] SignUp caught error:', {
@@ -127,7 +152,7 @@ export async function signOut() {
 export async function resetPassword(email: string) {
   try {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'handsios://auth-callback?type=recovery'
+      redirectTo: getAuthCallbackRedirectUrl({ type: 'recovery' }),
     })
 
     if (error) throw error
@@ -163,6 +188,9 @@ export async function resendVerificationEmail(email: string): Promise<ResendEmai
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email,
+      options: {
+        emailRedirectTo: getEmailConfirmationRedirectUrl(),
+      },
     })
     
 
@@ -172,11 +200,12 @@ export async function resendVerificationEmail(email: string): Promise<ResendEmai
     await asyncStorage.setItem(STORAGE_KEY, new Date().toISOString())
 
     return { success: true, canResend: true }
-  } catch (error) {
+  } catch (error: any) {
+    console.error('[Auth] resend verification failed:', error?.message, error?.code, error)
     return {
       success: false,
       error: (error as AuthError).message || 'Failed to resend verification email',
-      canResend: true
+      canResend: true,
     }
   }
 }

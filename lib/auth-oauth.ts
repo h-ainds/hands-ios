@@ -1,8 +1,8 @@
 // lib/auth-oauth.ts
 import * as WebBrowser from 'expo-web-browser'
-import { makeRedirectUri } from 'expo-auth-session'
 import { Platform } from 'react-native'
 import { supabase } from './supabase/client'
+import { getAuthCallbackRedirectUrl } from './auth-redirect'
 
 WebBrowser.maybeCompleteAuthSession()
 
@@ -29,16 +29,8 @@ function getOAuthParams(callbackUrl: string) {
 }
 
 function getRedirectUrl() {
-  // Web uses a normal URL; native uses your app scheme
-  if (Platform.OS === 'web') {
-    return window.location.origin + '/auth-callback'
-  }
-
-  // This must match your app.json scheme and your Supabase Redirect URLs allowlist
-  return makeRedirectUri({
-    scheme: 'handsios',
-    path: 'auth-callback',
-  })
+  // Native: Linking.createURL → exp://... in Expo Go, handsios:// in dev/prod builds
+  return getAuthCallbackRedirectUrl()
 }
 
 async function completeOAuthResult(result: WebBrowser.WebBrowserAuthSessionResult): Promise<OAuthResult> {
@@ -100,6 +92,14 @@ export async function signInWithGoogle(): Promise<OAuthResult> {
   try {
     const redirectUrl = getRedirectUrl()
     console.log('Google OAuth Redirect URL:', redirectUrl)
+    if (__DEV__) {
+      console.warn(
+        '[Hands Auth] This URL must be allowlisted in Supabase (Auth → URL Configuration → Redirect URLs).\n' +
+          'If login opens your website (e.g. app.handsforu) instead of the app, add: exp://** and handsios://**\n' +
+          `Redirect: ${redirectUrl}\n` +
+          'See docs/SUPABASE_AUTH_REDIRECTS.md'
+      )
+    }
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -142,6 +142,12 @@ export async function signInWithApple(): Promise<OAuthResult> {
   try {
     const redirectUrl = getRedirectUrl()
     console.log('Apple OAuth Redirect URL:', redirectUrl)
+    if (__DEV__) {
+      console.warn(
+        '[Hands Auth] Allowlist this redirect in Supabase or add wildcards exp://** and handsios://**\n' +
+          `Redirect: ${redirectUrl}`
+      )
+    }
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'apple',

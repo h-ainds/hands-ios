@@ -18,7 +18,7 @@ export interface Ingredient {
 }
 
 interface AnalyzeImageResponse {
-  recipes: SuggestedRecipe[]
+  ingredients: Ingredient[]
 }
 
 export interface SuggestedRecipe {
@@ -326,38 +326,9 @@ Deno.serve(async (req) => {
     const messages = buildMessages(body.imageBase64, body.mimeType)
     const detectedIngredients = await callOpenAIChat(openaiKey, messages)
 
-    // 2) Use detected ingredients -> recipe suggestions (existing RAG candidate matcher)
-    const ingredientText = detectedIngredients.map(i => i.name).join(", ") || "ingredients"
-    const embedding = await generateEmbedding(ingredientText, openaiKey)
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-
-    // Call RPC via Supabase REST to avoid importing supabase-js in this edge function.
-    const rpcUrl = `${supabaseUrl}/rest/v1/rpc/match_recipes`
-    const rpcResponse = await fetch(rpcUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: supabaseServiceKey,
-        Authorization: `Bearer ${supabaseServiceKey}`,
-      },
-      body: JSON.stringify({
-        query_embedding: embedding,
-        match_count: 4,
-      }),
-    })
-
-    if (!rpcResponse.ok) {
-      const errorText = await rpcResponse.text().catch(() => "Unknown error")
-      throw new Error(`Database error (${rpcResponse.status}): ${errorText}`)
-    }
-
-    const rawRecipes = (await rpcResponse.json()) as MatchRecipeRow[]
-
-    const recipes = transformRecipes(rawRecipes || [], detectedIngredients)
-
-    const responseBody: AnalyzeImageResponse = { recipes }
+    // 2) Return detected ingredients to the frontend.
+    // (Recipe suggestion generation is handled elsewhere; for this scan flow we only extract ingredients.)
+    const responseBody: AnalyzeImageResponse = { ingredients: detectedIngredients }
 
     return new Response(JSON.stringify(responseBody), {
       status: 200,
