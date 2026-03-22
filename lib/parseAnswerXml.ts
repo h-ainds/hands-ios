@@ -25,10 +25,10 @@ export function parseAnswerXml(xml: string): ParsedAnswer | null {
     while ((itemMatch = itemRegex.exec(xml)) !== null) {
       const itemContent = itemMatch[1]
 
-      const id = itemContent.match(/<id>(.*?)<\/id>/)?.[1]?.trim() ?? ''
-      const title = itemContent.match(/<title>(.*?)<\/title>/)?.[1]?.trim() ?? ''
-      const caption = itemContent.match(/<caption>(.*?)<\/caption>/)?.[1]?.trim() ?? ''
-      let image = itemContent.match(/<image>(.*?)<\/image>/)?.[1]?.trim() ?? ''
+      const id = itemContent.match(/<id>([\s\S]*?)<\/id>/)?.[1]?.trim() ?? ''
+      const title = itemContent.match(/<title>([\s\S]*?)<\/title>/)?.[1]?.trim() ?? ''
+      const caption = itemContent.match(/<caption>([\s\S]*?)<\/caption>/)?.[1]?.trim() ?? ''
+      let image = itemContent.match(/<image>([\s\S]*?)<\/image>/)?.[1]?.trim() ?? ''
       
       // Normalize "undefined" string to empty string so we fetch from database
       if (image === 'undefined' || image === 'null') {
