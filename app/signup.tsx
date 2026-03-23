@@ -125,10 +125,19 @@ export default function SignupScreen() {
           params: { email: formData.email },
         })
         return
-      } else {
-        Alert.alert('Success', 'Account created successfully!')
-        router.replace('/onboarding-profile')
-      }      
+      }
+
+      if (result.skippedEmailConfirmation) {
+        Alert.alert(
+          'Signed in',
+          'No confirmation email was sent because Supabase has "Confirm email" turned OFF (users are signed in immediately). Turn it on under Authentication → Providers → Email if you want verification emails.',
+          [{ text: 'Continue', onPress: () => router.replace('/onboarding-profile') }]
+        )
+        return
+      }
+
+      Alert.alert('Success', 'Account created successfully!')
+      router.replace('/onboarding-profile')
       
     } catch (error: any) {
       console.error('[SignUp] Error occurred:', {

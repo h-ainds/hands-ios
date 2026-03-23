@@ -47,7 +47,10 @@ export default function VerifyEmailScreen() {
     <SafeAreaView className="flex-1 bg-white">
       <View className="flex-1 px-6 pt-32 justify-start">
         <Text className="text-3xl font-extrabold text-black text-center">Verify your email</Text>
-        <Text className="text-secondary-placeholder text-center mt-2">Enter the 6-digit code sent to</Text>
+        <Text className="text-secondary-placeholder text-center mt-2 px-4">
+          Enter the 6-digit code if your project sends OTP. If your email only has a confirmation link, tap that
+          link — it should open the app. Sent to
+        </Text>
         <Text className="text-black text-center font-semibold mt-1">{email}</Text>
 
         <TextInput
