@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, Image } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
@@ -11,10 +11,11 @@ import BackButton from '@/components/BackButton'
 
 export default function AskScreen() {
   const router = useRouter()
-  const { conversationId } = useLocalSearchParams()  // ← GET conversationId from URL
+  const { conversationId, imageUri, prompt: routePrompt } = useLocalSearchParams()
   const [input, setInput] = useState('')
   const [userId, setUserId] = useState<string | null>(null)
   const [conversationLoaded, setConversationLoaded] = useState(false)
+  const [attachmentUri, setAttachmentUri] = useState<string | null>(null)
 
   const { messages, recipeCards, status, isLoading, sendMessage, cancelRequest, setMessages, setRecipeCards } = useRecipeChat({
     timeout: 30000,
@@ -39,6 +40,23 @@ export default function AskScreen() {
       loadConversation(conversationId as string)
     }
   }, [conversationId])
+
+  // Pre-populate composer when navigated from Scan.
+  useEffect(() => {
+    if (conversationId) return
+
+    const nextImageUri =
+      typeof imageUri === 'string' ? imageUri : Array.isArray(imageUri) ? imageUri[0] : undefined
+    const nextPrompt =
+      typeof routePrompt === 'string'
+        ? routePrompt
+        : Array.isArray(routePrompt)
+          ? routePrompt[0]
+          : undefined
+
+    if (nextImageUri) setAttachmentUri(nextImageUri)
+    if (nextPrompt && !input.trim()) setInput(nextPrompt)
+  }, [conversationId, imageUri, routePrompt])
 
   const loadConversation = async (convId: string) => {
     try {
@@ -127,22 +145,39 @@ export default function AskScreen() {
 )}
 
               {/* Input */}
-              <View className="flex-1 flex-row items-center bg-white rounded-full px-4 py-2.5 shadow-hands">
-                <TextInput
-                  value={input}
-                  onChangeText={setInput}
-                  placeholder="Ask"
-                  placeholderTextColor="#9F9F9F"
-                  className="flex-1 text-black text-base mr-2"
-                  onSubmitEditing={handleSubmit}
-                  returnKeyType="send"
-                  autoFocus
-                  editable={!isLoading}
-                />
-
-                {input.trim().length > 0 && (
-                  <SubmitButton disabled={isLoading} />
+              <View className="flex-1">
+                {attachmentUri && (
+                  <View className="flex-row items-center bg-secondary rounded-2xl px-3 py-2 mb-2">
+                    <Image
+                      source={{ uri: attachmentUri }}
+                      className="w-14 h-14 rounded-2xl bg-white"
+                    />
+                    <Pressable
+                      onPress={() => setAttachmentUri(null)}
+                      className="ml-3 p-2 rounded-full bg-white"
+                    >
+                      <SymbolView name="xmark" size={16} tintColor="#6B7280" />
+                    </Pressable>
+                  </View>
                 )}
+
+                <View className="flex-row items-center bg-white rounded-full px-4 py-2.5 shadow-hands">
+                  <TextInput
+                    value={input}
+                    onChangeText={setInput}
+                    placeholder="Ask"
+                    placeholderTextColor="#9F9F9F"
+                    className="flex-1 text-black text-base mr-2"
+                    onSubmitEditing={handleSubmit}
+                    returnKeyType="send"
+                    autoFocus
+                    editable={!isLoading}
+                  />
+
+                  {input.trim().length > 0 && (
+                    <SubmitButton disabled={isLoading} />
+                  )}
+                </View>
               </View>
             </View>
           </View>
@@ -156,6 +191,21 @@ export default function AskScreen() {
         {/* Bottom Input */}
         {isChatStarted && (
           <View className="px-12 pb-12 pt-2 bg-transparent">
+            {attachmentUri && (
+              <View className="flex-row items-center bg-secondary rounded-2xl px-3 py-2 mb-3">
+                <Image
+                  source={{ uri: attachmentUri }}
+                  className="w-14 h-14 rounded-2xl bg-white"
+                />
+                <Pressable
+                  onPress={() => setAttachmentUri(null)}
+                  className="ml-3 p-2 rounded-full bg-white"
+                >
+                  <SymbolView name="xmark" size={16} tintColor="#6B7280" />
+                </Pressable>
+              </View>
+            )}
+
             <View className="flex-row items-end bg-[#F7F7F7] rounded-full px-4 py-3">
               <TextInput
                 value={input}
