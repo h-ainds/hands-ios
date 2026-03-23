@@ -23,6 +23,8 @@ export default function AskScreen() {
   const isChatStarted = messages.length > 0
   const isTyping = status === 'connecting' || status === 'streaming' || status === 'typing'
 
+  const [inputHeight, setInputHeight] = useState(40)
+
   useEffect(() => {
     const getUser = async () => {
       const {
@@ -99,8 +101,10 @@ export default function AskScreen() {
         style={{ opacity: disabled ? 0.5 : 1 }}  >
         <SymbolView 
         name="arrow.up" 
-        size={16} 
-        tintColor="#FFFFFF" />
+        size={18} 
+        tintColor="#FFFFFF" 
+        weight="semibold"
+        />
       </View>
     </Pressable>
   )
@@ -127,18 +131,23 @@ export default function AskScreen() {
 )}
 
               {/* Input */}
-              <View className="flex-1 flex-row items-center bg-white rounded-full px-4 py-2.5 shadow-hands">
-                <TextInput
-                  value={input}
-                  onChangeText={setInput}
-                  placeholder="Ask"
-                  placeholderTextColor="#9F9F9F"
-                  className="flex-1 text-black text-base mr-2"
-                  onSubmitEditing={handleSubmit}
-                  returnKeyType="send"
-                  autoFocus
-                  editable={!isLoading}
-                />
+{/* Input */}
+<View
+  className="flex-1 flex-row items-center bg-white rounded-full px-4 py-2.5 shadow-hands"
+  style={{ height: inputHeight }}   // ← lock container height
+>
+  <TextInput
+    value={input}
+    onChangeText={setInput}
+    placeholder="Ask"
+    placeholderTextColor="#9F9F9F"
+    className="flex-1 text-black text-base mr-2"
+    style={{ height: inputHeight - 20 }}   // ← lock input height
+    onSubmitEditing={handleSubmit}
+    returnKeyType="send"
+    autoFocus
+    editable={!isLoading}
+  />
 
                 {input.trim().length > 0 && (
                   <SubmitButton disabled={isLoading} />
@@ -155,14 +164,25 @@ export default function AskScreen() {
 
         {/* Bottom Input */}
         {isChatStarted && (
-          <View className="px-12 pb-12 pt-2 bg-transparent">
-            <View className="flex-row items-end bg-[#F7F7F7] rounded-full px-4 py-3">
+          <View className="px-16 pb-12 pt-2 bg-transparent">
+            <View
+              className="flex-row items-center bg-white rounded-full px-4"
+              style={{
+                shadowColor: '#',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.06,
+                shadowRadius: 9,
+                elevation: 2,
+                paddingVertical: 10,
+              }}
+            >
               <TextInput
                 value={input}
                 onChangeText={setInput}
                 placeholder="Ask something else"
                 placeholderTextColor="#9F9F9F"
-                className="flex-1 text-black text-base mr-2"
+                className="flex-1 text-black text-base"
+                style={{ paddingTop: 2, paddingBottom: 2, lineHeight: 20, textAlignVertical: 'center' }}
                 multiline
                 onSubmitEditing={handleSubmit}
                 editable={!isLoading}

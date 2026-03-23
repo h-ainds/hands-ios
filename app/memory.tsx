@@ -122,9 +122,25 @@ export default function MemoryScreen() {
   }
 
   const handleDelete = (index: number) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
-    const next = list.filter((_, i) => i !== index)
-    persist(next)
+    Alert.alert('Delete this memory?', 'This preference is about to be deleted.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+          persist(list.filter((_, i) => i !== index))
+        },
+      },
+    ])
+  }
+  
+  const handleEllipsis = (index: number) => {
+    Alert.alert('', '', [
+      { text: 'Edit', onPress: () => handleEdit(index) },
+      { text: 'Delete', style: 'destructive', onPress: () => handleDelete(index) },
+      { text: 'Cancel', style: 'cancel' },
+    ])
   }
 
   const limitWords = (text: string, max: number): string => {
@@ -160,7 +176,7 @@ export default function MemoryScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
-          <Text className="text-2xl font-bold text-black mb-6">Memory</Text>
+          <Text className="text-3xl font-bold text-black mb-6">Memory</Text>
 
           {loading ? (
             <ActivityIndicator size="small" className="py-4" />
@@ -205,21 +221,25 @@ export default function MemoryScreen() {
                       </View>
                     </View>
                   ) : (
-                    <View
-                      key={`${index}-${label}`}
-                      className="flex-row items-center rounded-full bg-secondary pl-4 pr-2 py-2.5 gap-2 self-start max-w-full"
-                    >
+<View
+  key={`${index}-${label}`}
+  className="flex-row items-center rounded-full bg-white pl-4 pr-2 py-2.5 gap-2 self-start max-w-full"
+  style={{
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 9,
+    elevation: 2,
+  }}
+>
                       <View className="flex-1 mr-1" style={{ minWidth: 100 }}>
-                        <Text className="text-base text-black/90" numberOfLines={3}>
+                        <Text className="text-base text-black" numberOfLines={3}>
                           {label}
                         </Text>
                       </View>
-                      <TouchableOpacity onPress={() => handleEdit(index)} className="p-1.5">
-                        <SymbolView name="pencil" size={16} tintColor="#374151" />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleDelete(index)} className="p-1.5">
-                        <SymbolView name="xmark" size={16} tintColor="#6B7280" />
-                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleEllipsis(index)} className="p-3">
+  <SymbolView name="ellipsis" size={18} tintColor="#000000" />
+</TouchableOpacity>
                     </View>
                   )
                 )}
