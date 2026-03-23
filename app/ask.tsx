@@ -24,6 +24,8 @@ export default function AskScreen() {
   const isChatStarted = messages.length > 0
   const isTyping = status === 'connecting' || status === 'streaming' || status === 'typing'
 
+  const [inputHeight, setInputHeight] = useState(40)
+
   useEffect(() => {
     const getUser = async () => {
       const {
@@ -117,8 +119,10 @@ export default function AskScreen() {
         style={{ opacity: disabled ? 0.5 : 1 }}  >
         <SymbolView 
         name="arrow.up" 
-        size={16} 
-        tintColor="#FFFFFF" />
+        size={18} 
+        tintColor="#FFFFFF" 
+        weight="semibold"
+        />
       </View>
     </Pressable>
   )
@@ -190,29 +194,39 @@ export default function AskScreen() {
 
         {/* Bottom Input */}
         {isChatStarted && (
-          <View className="px-12 pb-12 pt-2 bg-transparent">
-            {attachmentUri && (
-              <View className="flex-row items-center bg-secondary rounded-2xl px-3 py-2 mb-3">
-                <Image
-                  source={{ uri: attachmentUri }}
-                  className="w-14 h-14 rounded-2xl bg-white"
-                />
-                <Pressable
-                  onPress={() => setAttachmentUri(null)}
-                  className="ml-3 p-2 rounded-full bg-white"
-                >
-                  <SymbolView name="xmark" size={16} tintColor="#6B7280" />
-                </Pressable>
-              </View>
-            )}
-
-            <View className="flex-row items-end bg-[#F7F7F7] rounded-full px-4 py-3">
+<View className="px-16 pb-12 pt-2 bg-transparent">
+  {attachmentUri && (
+    <View className="flex-row items-center bg-secondary rounded-2xl px-3 py-2 mb-3">
+      <Image
+        source={{ uri: attachmentUri }}
+        className="w-14 h-14 rounded-2xl bg-white"
+      />
+      <Pressable
+        onPress={() => setAttachmentUri(null)}
+        className="ml-3 p-2 rounded-full bg-white"
+      >
+        <SymbolView name="xmark" size={16} tintColor="#6B7280" />
+      </Pressable>
+    </View>
+  )}
+  <View
+    className="flex-row items-center bg-white rounded-full px-4"
+    style={{
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 9,
+      elevation: 2,
+      paddingVertical: 10,
+    }}
+  >
               <TextInput
                 value={input}
                 onChangeText={setInput}
                 placeholder="Ask something else"
                 placeholderTextColor="#9F9F9F"
-                className="flex-1 text-black text-base mr-2"
+                className="flex-1 text-black text-base"
+                style={{ paddingTop: 2, paddingBottom: 2, lineHeight: 20, textAlignVertical: 'center' }}
                 multiline
                 onSubmitEditing={handleSubmit}
                 editable={!isLoading}
