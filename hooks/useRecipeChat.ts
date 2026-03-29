@@ -20,6 +20,8 @@ export type ChatSendAttachment = {
   mimeType?: string
 }
 
+const DEFAULT_IMAGE_CONTEXT = 'What can I make with these ingredients?'
+
 interface UseRecipeChatOptions {
   timeout?: number
   typingDelay?: number
@@ -205,20 +207,22 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
         throw new Error('Supabase configuration missing')
       }
 
-      // NOTE: Only `stream` exists in this repo (no streamv2).
-      const functionUrl = `${supabaseUrl}/functions/v1/stream`
+      const functionUrl = `${supabaseUrl}/functions/v1/streamv2`
 
       // Make POST request to streaming endpoint
+      const normalizedContext = (payload?.context || '').trim()
+      const effectivePrompt = normalizedContext || userMessage || DEFAULT_IMAGE_CONTEXT
+
       const requestBody =
         payload && (payload.imageBase64 || payload.context !== undefined)
           ? {
-              context: payload.context ?? userMessage,
+              context: normalizedContext || DEFAULT_IMAGE_CONTEXT,
               imageBase64: payload.imageBase64,
               mimeType: payload.mimeType,
               // Backwards compatibility for older edge function versions
-              prompt: payload.context ?? userMessage,
+              prompt: effectivePrompt,
             }
-          : { context: userMessage, prompt: userMessage }
+          : { context: effectivePrompt, prompt: effectivePrompt }
 
       const history = messagesRef.current
         .filter(m => m.role === 'user')
