@@ -14,6 +14,12 @@ export type RecipeCardData = {
 
 export type StreamingStatus = 'idle' | 'connecting' | 'streaming' | 'typing' | 'error'
 
+export type ChatSendAttachment = {
+  context?: string
+  imageBase64?: string
+  mimeType?: string
+}
+
 interface UseRecipeChatOptions {
   timeout?: number
   typingDelay?: number
@@ -26,7 +32,7 @@ interface UseRecipeChatReturn {
   status: StreamingStatus
   error: Error | null
   isLoading: boolean
-  sendMessage: (message: string, conversationId?: string) => Promise<void>
+  sendMessage: (message: string, conversationId?: string, payload?: ChatSendAttachment) => Promise<void>
   clearChat: () => void
   cancelRequest: () => void
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
@@ -124,7 +130,7 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
   }, [])
 
   // Send message and handle streaming response
-  const sendMessage = useCallback(async (message: string, conversationId?: string) => {
+  const sendMessage = useCallback(async (message: string, conversationId?: string, payload?: ChatSendAttachment) => {
     if (!message.trim()) return
 
     // Cancel any existing request
@@ -199,9 +205,26 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
         throw new Error('Supabase configuration missing')
       }
 
-      const functionUrl = `${supabaseUrl}/functions/v1/streamv2`
+      // NOTE: Only `stream` exists in this repo (no streamv2).
+      const functionUrl = `${supabaseUrl}/functions/v1/stream`
 
       // Make POST request to streaming endpoint
+      const requestBody =
+        payload && (payload.imageBase64 || payload.context !== undefined)
+          ? {
+              context: payload.context ?? userMessage,
+              imageBase64: payload.imageBase64,
+              mimeType: payload.mimeType,
+              // Backwards compatibility for older edge function versions
+              prompt: payload.context ?? userMessage,
+            }
+          : { context: userMessage, prompt: userMessage }
+
+      const history = messagesRef.current
+        .filter(m => m.role === 'user')
+        .slice(-2)
+        .map(m => m.content)
+
       const response = await fetch(functionUrl, {
         method: 'POST',
         headers: {
@@ -211,11 +234,8 @@ export function useRecipeChat(options: UseRecipeChatOptions = {}): UseRecipeChat
           'Authorization': `Bearer ${session?.access_token || anonKey}`,
         },
         body: JSON.stringify({
-          prompt: userMessage,
-          history: messagesRef.current
-            .filter(m => m.role === 'user')
-            .slice(-2)
-            .map(m => m.content),
+          ...requestBody,
+          history,
         }),
         signal: abortControllerRef.current.signal,
       })
