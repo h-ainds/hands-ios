@@ -147,17 +147,16 @@ export default function HomeScreen() {
           height: 44,
           borderRadius: 22,
           backgroundColor: 'white',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
-          elevation: 3,
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 50,
         }}
       >
-        <SymbolView name="text.alignleft" size={20} tintColor="#000000" />
+        <SymbolView 
+        name="bubble.left.and.bubble.right" 
+        size={23} 
+        weight="semibold"
+        tintColor="#000000" />
       </Pressable>
 
       {/* Search Button - Top Right */}
@@ -165,7 +164,11 @@ export default function HomeScreen() {
   onPress={handleSearchPress}
   className="absolute top-16 right-4 w-11 h-11 rounded-full bg-white items-center justify-center z-50"
 >
-  <SymbolView name="magnifyingglass" size={20} tintColor="#000000" />
+  <SymbolView 
+  name="magnifyingglass" 
+  size={20} 
+  weight="semibold"
+  tintColor="#000000" />
 </Pressable>
       
       <ScrollView className="flex-1" contentContainerClassName="pb-20">
