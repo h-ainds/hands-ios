@@ -15,12 +15,13 @@ const Composer = ({ onAskPress, onSearchPress, onYouPress, onScanPress }: Compos
       {/* Left Button - You */}
       <Pressable
         onPress={onYouPress}
-        className="rounded-full bg-secondary px-4 py-4 items-center justify-center mr-3"
+        className="rounded-full bg-white px-3 py-3 items-center justify-center mr-3"
       >
         <SymbolView
-          name="person.fill"
-          size={18}
-          tintColor="#9F9F9F"
+          name="person"
+          size={23}
+             weight="semibold"
+          tintColor="#000000"
         />
       </Pressable>
 
@@ -30,7 +31,7 @@ const Composer = ({ onAskPress, onSearchPress, onYouPress, onScanPress }: Compos
           pointerEvents="none"
           placeholder="Ask"
           placeholderTextColor="#000000"
-          className="rounded-full bg-secondary px-4 py-3 text-lg text-black font-regular"
+          className="rounded-full bg-white px-4 py-3 text-lg text-black font-regular"
         />
       </Pressable>
 
@@ -38,9 +39,12 @@ const Composer = ({ onAskPress, onSearchPress, onYouPress, onScanPress }: Compos
       {onScanPress && (
         <Pressable
           onPress={onScanPress}
-          className="rounded-full bg-secondary px-4 py-4 items-center justify-center ml-3"
+          className="rounded-full bg-white px-3 py-3 items-center justify-center ml-3"
         >
-          <SymbolView name="camera.fill" size={18} tintColor="#9F9F9F" />
+          <SymbolView name="camera" 
+          size={23} 
+          weight="semibold"
+          tintColor="#000000" />
         </Pressable>
       )}
     </View>
