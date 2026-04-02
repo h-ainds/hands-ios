@@ -23,6 +23,15 @@ interface MatchRecipeRow {
   }
 }
 
+// Raw response from search_recipes_by_ingredients RPC
+interface IngredientSearchRow {
+  recipe_id: string
+  rank: number
+  title: string
+  caption: string
+  image: string
+}
+
 // Transformed recipe for XML output
 interface Recipe {
   id: string
@@ -63,6 +72,60 @@ function transformRecipes(rows: MatchRecipeRow[]): Recipe[] {
       caption: row.metadata?.caption || "",
       image: row.metadata?.image || "",
     }))
+}
+
+// Non-fatal wrapper around ingredient search RPC
+async function searchByIngredients(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  prompt: string,
+  matchCount: number
+): Promise<IngredientSearchRow[]> {
+  const { data, error } = await supabaseAdmin.rpc("search_recipes_by_ingredients", {
+    search_query: prompt,
+    match_count: matchCount,
+  })
+  if (error) {
+    console.error("[Stream] Ingredient search error:", error.message)
+    return []
+  }
+  return data || []
+}
+
+// Merge vector search and ingredient search results using Reciprocal Rank Fusion.
+// Recipes appearing in both lists get a score boost — best of both worlds.
+// k=60 is the standard RRF constant.
+function reciprocalRankFusion(
+  vectorResults: Recipe[],
+  ingredientResults: IngredientSearchRow[],
+  k = 60
+): Recipe[] {
+  const scores = new Map<string, { score: number } & Recipe>()
+
+  vectorResults.forEach((r, i) => {
+    const id = String(r.id)
+    scores.set(id, { ...r, score: 1 / (k + i + 1) })
+  })
+
+  ingredientResults.forEach((row, i) => {
+    const id = String(row.recipe_id)
+    const contribution = 1 / (k + i + 1)
+    const existing = scores.get(id)
+    if (existing) {
+      existing.score += contribution
+    } else {
+      scores.set(id, {
+        id,
+        title: row.title || "Untitled Recipe",
+        caption: row.caption || "",
+        image: row.image || "",
+        score: contribution,
+      })
+    }
+  })
+
+  return Array.from(scores.values())
+    .sort((a, b) => b.score - a.score)
+    .map(({ score: _s, ...recipe }) => recipe)
 }
 
 // Post-retrieval dietary filter: embedding retrieval is soft and cannot enforce
@@ -110,12 +173,13 @@ async function filterRecipesByPreferences(
 
   const data = await response.json()
   const content = data.choices?.[0]?.message?.content?.trim() ?? "[]"
+  console.log("[Stream] Dietary filter raw LLM response:", content)
 
   try {
     // Strip markdown fences in case the model wraps the JSON
     const clean = content.replace(/```json|```/g, "").trim()
-    const ids: string[] = JSON.parse(clean)
-    const filtered = recipes.filter(r => ids.includes(r.id))
+    const ids: string[] = JSON.parse(clean).map(String)
+    const filtered = recipes.filter(r => ids.includes(String(r.id)))
     console.log(`[Stream] Dietary filter: ${recipes.length} → ${filtered.length} recipes`)
     return filtered.length > 0 ? filtered : recipes // fallback if filter is too aggressive
   } catch {
@@ -221,7 +285,7 @@ Deno.serve(async (req) => {
       const { data: profile, error: profileError } = await supabaseAdmin
         .from("UserTasteProfiles")
         .select("taste_preferences")
-        .eq("user_id", userId)
+        .eq("id", userId)
         .single()
 
       if (profileError) {
@@ -243,20 +307,26 @@ Deno.serve(async (req) => {
         try {
           const embedding = await generateEmbedding(contextualQuery, openaiKey)
 
-          // Fetch extra candidates only when dietary filtering is active,
-          // so the filter has enough recipes to find 6 compliant ones
-          const { data: rawRecipes, error: rpcError } = await supabaseAdmin.rpc("match_recipes", {
-            query_embedding: embedding,
-            match_count: tastePreferences.length > 0 ? 15 : 6,
-          })
+          // Run vector search and ingredient search in parallel — no added latency
+          const vectorMatchCount = tastePreferences.length > 0 ? 20 : 10
+          const [vectorResult, ingredientRows] = await Promise.all([
+            supabaseAdmin.rpc("match_recipes", {
+              query_embedding: embedding,
+              match_count: vectorMatchCount,
+            }),
+            searchByIngredients(supabaseAdmin, contextualQuery, 20),
+          ])
 
-          if (rpcError) {
-            console.error("[Stream] RPC error:", rpcError)
-            throw new Error(`Database error: ${rpcError.message}`)
+          if (vectorResult.error) {
+            console.error("[Stream] RPC error:", vectorResult.error)
+            throw new Error(`Database error: ${vectorResult.error.message}`)
           }
 
-          let recipes = transformRecipes(rawRecipes || [])
-          console.log(`[Stream] DB returned ${rawRecipes?.length ?? 0} rows, ${recipes.length} passed similarity filter`)
+          const filteredVectorRecipes = transformRecipes(vectorResult.data || [])
+          console.log(`[Stream] Vector: ${filteredVectorRecipes.length} | Ingredient: ${ingredientRows.length}`)
+
+          let recipes = reciprocalRankFusion(filteredVectorRecipes, ingredientRows)
+          console.log(`[Stream] RRF merged: ${recipes.length} unique recipes`)
 
           // Post-retrieval dietary filter — the only reliable way to enforce restrictions
           if (tastePreferences.length > 0) {
