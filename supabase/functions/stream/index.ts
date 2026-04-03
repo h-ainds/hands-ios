@@ -3,32 +3,13 @@ import { createClient } from "@supabase/supabase-js"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
-type MimeType = "image/jpeg" | "image/png" | "image/webp" | "image/gif"
-
 interface RequestBody {
-  // Backwards compatible (older clients)
-  prompt?: string
-
-  // New: optional user-typed context (the text field is not a pre-written prompt)
-  context?: string
-
-  // Optional image attachment
-  imageBase64?: string
-  mimeType?: MimeType
-
-  // Optional: last 2 user messages (oldest first) for mild continuity
-  history?: string[]
-}
-
-interface Ingredient {
-  name: string
-  category: string
-  confidence: "high" | "medium" | "low"
+  prompt: string
+  history?: string[]  // last 2 user messages, oldest first
 }
 
 // Raw response from match_recipes RPC
@@ -42,6 +23,15 @@ interface MatchRecipeRow {
   }
 }
 
+// Raw response from search_recipes_by_ingredients RPC
+interface IngredientSearchRow {
+  recipe_id: string
+  rank: number
+  title: string
+  caption: string
+  image: string
+}
+
 // Transformed recipe for XML output
 interface Recipe {
   id: string
@@ -50,35 +40,11 @@ interface Recipe {
   image: string
 }
 
-const INGREDIENT_SYSTEM_PROMPT = `You are a kitchen assistant that identifies ingredients from photos.
-
-Given an image of a fridge, pantry, or groceries, identify every visible ingredient.
-
-Rules:
-- Group items into high-level categories such as: vegetables, fruits, proteins, dairy, grains, snacks, condiments, beverages, and other
-- If you are not confident that something is a specific ingredient, either:
-  - classify it as "other" with low confidence, or
-  - omit it entirely if it is too ambiguous
-- Prefer specific ingredient names over generic ones when you are confident (e.g. "cherry tomatoes" instead of "tomatoes")
-- Only include food ingredients, not containers or background objects
-
-Return a JSON object with this exact shape:
-{
-  "ingredients": [
-    {
-      "name": string,
-      "category": string,
-      "confidence": "high" | "medium" | "low"
-    }
-  ]
-}
-`.trim()
-
 async function generateEmbedding(text: string, apiKey: string): Promise<number[]> {
   const response = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -96,120 +62,11 @@ async function generateEmbedding(text: string, apiKey: string): Promise<number[]
   return data.data[0].embedding
 }
 
-function parseIngredientsFromResponse(content: string): Ingredient[] {
-  const start = content.indexOf("{")
-  const end = content.lastIndexOf("}")
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error("No JSON object found in response")
-  }
-
-  const jsonString = content.slice(start, end + 1)
-  const parsed = JSON.parse(jsonString) as { ingredients?: Ingredient[] }
-
-  if (!parsed || !Array.isArray(parsed.ingredients)) {
-    throw new Error("Invalid JSON structure: missing ingredients array")
-  }
-
-  return parsed.ingredients
-    .filter(
-      (item) =>
-        typeof item?.name === "string" &&
-        typeof item?.category === "string" &&
-        (item?.confidence === "high" ||
-          item?.confidence === "medium" ||
-          item?.confidence === "low")
-    )
-    .map((item) => ({
-      name: item.name.trim(),
-      category: item.category.trim(),
-      confidence: item.confidence,
-    }))
-}
-
-async function extractIngredientsFromImage(
-  apiKey: string,
-  imageBase64: string,
-  mimeType: MimeType
-): Promise<Ingredient[]> {
-  const imageUrl = `data:${mimeType};base64,${imageBase64}`
-
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "system",
-          content: [{ type: "text", text: INGREDIENT_SYSTEM_PROMPT }],
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Here is the image. Identify the ingredients following the instructions.",
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: imageUrl,
-                detail: "auto",
-              },
-            },
-          ],
-        },
-      ],
-      max_completion_tokens: 500,
-      response_format: { type: "text" },
-    }),
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "Unknown error")
-    throw new Error(
-      `OpenAI ingredient extraction error (${response.status}): ${errorText.slice(0, 300)}`
-    )
-  }
-
-  const data = await response.json()
-  const content = data?.choices?.[0]?.message?.content
-  if (!content || typeof content !== "string") {
-    throw new Error("OpenAI ingredient extraction returned empty content")
-  }
-
-  return parseIngredientsFromResponse(content)
-}
-
-function buildViPrompt(
-  ingredients: Ingredient[],
-  context: string | undefined
-): string {
-  const ingredientNames = ingredients
-    .map((i) => i.name?.trim())
-    .filter(Boolean)
-    .join(", ")
-
-  const base = ingredientNames
-    ? `I have the following ingredients in my fridge: ${ingredientNames}.`
-    : "I have a photo of ingredients from my fridge."
-
-  const c = (context || "").trim()
-  const question =
-    c.length > 0 ? c : "What can I make with these ingredients?"
-
-  // Important: user never sees ingredients; they are only used to steer retrieval + answer.
-  return `${base}\n\nAdditional context: ${question}`.trim()
-}
-
-// Transform raw RPC response to Recipe format (filter out low-similarity results)
+// Transform raw RPC response to Recipe format, filtering out low-similarity results
 function transformRecipes(rows: MatchRecipeRow[]): Recipe[] {
-  return (rows || [])
-    .filter((row) => row.similarity >= 0.3)
-    .map((row) => ({
+  return rows
+    .filter(row => row.similarity >= 0.3)
+    .map(row => ({
       id: row.recipe_id,
       title: row.metadata?.title || "Untitled Recipe",
       caption: row.metadata?.caption || "",
@@ -217,251 +74,287 @@ function transformRecipes(rows: MatchRecipeRow[]): Recipe[] {
     }))
 }
 
-// Build the system prompt with recipe context for RAG
-function buildSystemPrompt(recipes: Recipe[]): string {
-  if (recipes.length === 0) {
-    return `
-You are Hands, a cooking assistant.
-
-No recipes were found matching the user's request.
-
-Output EXACTLY this XML structure:
-
-<answer>
-  <text>
-    I couldn't find any recipes matching your request. Try describing what ingredients you have or what type of dish you're looking for.
-  </text>
-  <items>
-  </items>
-</answer>
-
-Rules:
-- Do not output anything outside XML
-`.trim()
+// Non-fatal wrapper around ingredient search RPC
+async function searchByIngredients(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  prompt: string,
+  matchCount: number
+): Promise<IngredientSearchRow[]> {
+  const { data, error } = await supabaseAdmin.rpc("search_recipes_by_ingredients", {
+    search_query: prompt,
+    match_count: matchCount,
+  })
+  if (error) {
+    console.error("[Stream] Ingredient search error:", error.message)
+    return []
   }
-
-  const recipeContext = recipes
-    .map((r, i) => `${i + 1}. ${r.id} - ${r.title} — ${r.caption} - ${r.image}`)
-    .join("\n")
-
-  return `
-You are Hands, a cooking assistant.
-
-You MUST recommend recipes.
-Keep the your response UNDER 25 words.
-
-You MUST output between 1 and ${recipes.length} <item> elements.
-Each <item> MUST use a recipe from the list below.
-You MUST NOT invent recipes.
-
-Available recipes:
-${recipeContext}
-
-Output EXACTLY this XML structure:
-
-<answer>
-  <text>
-    One paragraph of helpful explanation.
-  </text>
-  <items>
-    ${recipes
-      .map(
-        () => `
-    <item>
-      <id></id>
-      <title></title>
-      <caption></caption>
-      <image></image>
-    </item>
-    `
-      )
-      .join("")}
-  </items>
-</answer>
-
-Rules:
-- Do not omit <items>
-- Do not output empty <item>
-- Do not repeat recipes
-- Do not output anything outside XML
-`.trim()
+  return data || []
 }
 
-// Stream chat completion from OpenAI (XML response body)
-async function streamChatCompletion(
-  controller: ReadableStreamDefaultController,
+// Merge vector search and ingredient search results using Reciprocal Rank Fusion.
+// Recipes appearing in both lists get a score boost — best of both worlds.
+// k=60 is the standard RRF constant.
+function reciprocalRankFusion(
+  vectorResults: Recipe[],
+  ingredientResults: IngredientSearchRow[],
+  k = 60
+): Recipe[] {
+  const scores = new Map<string, { score: number } & Recipe>()
+
+  vectorResults.forEach((r, i) => {
+    const id = String(r.id)
+    scores.set(id, { ...r, score: 1 / (k + i + 1) })
+  })
+
+  ingredientResults.forEach((row, i) => {
+    const id = String(row.recipe_id)
+    const contribution = 1 / (k + i + 1)
+    const existing = scores.get(id)
+    if (existing) {
+      existing.score += contribution
+    } else {
+      scores.set(id, {
+        id,
+        title: row.title || "Untitled Recipe",
+        caption: row.caption || "",
+        image: row.image || "",
+        score: contribution,
+      })
+    }
+  })
+
+  return Array.from(scores.values())
+    .sort((a, b) => b.score - a.score)
+    .map(({ score: _s, ...recipe }) => recipe)
+}
+
+// Post-retrieval dietary filter: embedding retrieval is soft and cannot enforce
+// dietary restrictions (e.g. "Chicken pasta bake" ranks highly for "pasta recipes"
+// regardless of query enrichment). This LLM filter is the only reliable approach.
+async function filterRecipesByPreferences(
   apiKey: string,
-  systemPrompt: string,
-  userPrompt: string,
-  image?: { imageBase64: string; mimeType: MimeType }
-): Promise<void> {
-  const userContent = image
-    ? [
-        { type: "text", text: userPrompt },
-        {
-          type: "image_url",
-          image_url: {
-            url: `data:${image.mimeType};base64,${image.imageBase64}`,
-            detail: "auto",
-          },
-        },
-      ]
-    : userPrompt
+  recipes: Recipe[],
+  preferences: string[]
+): Promise<Recipe[]> {
+  if (preferences.length === 0) return recipes
+
+  const recipeList = recipes
+    .map(r => `${r.id}: ${r.title} — ${r.caption}`)
+    .join("\n")
+
+  const prefText = preferences.join(", ")
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       model: "gpt-4o-mini",
-      stream: true,
+      stream: false,
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
+        {
+          role: "system",
+          content: `You are a strict dietary compliance checker. Given a list of recipes and a user's dietary preferences, return ONLY the IDs of recipes that comply with ALL of the user's dietary restrictions. Be strict — if a recipe title or description suggests ingredients that violate any restriction, exclude it. Return a JSON array of ID strings only, with no explanation. Example: ["123", "456"]`,
+        },
+        {
+          role: "user",
+          content: `User dietary preferences: ${prefText}\n\nRecipes:\n${recipeList}\n\nReturn JSON array of compliant recipe IDs:`,
+        },
       ],
     }),
   })
 
   if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`OpenAI Chat API error: ${error}`)
+    console.error("[Stream] Dietary filter API error:", await response.text())
+    return recipes // fall back to unfiltered if the call fails
   }
 
-  const reader = response.body?.getReader()
-  if (!reader) throw new Error("No response body")
+  const data = await response.json()
+  const content = data.choices?.[0]?.message?.content?.trim() ?? "[]"
+  console.log("[Stream] Dietary filter raw LLM response:", content)
 
-  const decoder = new TextDecoder()
-  const encoder = new TextEncoder()
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    const chunk = decoder.decode(value)
-    const lines = chunk.split("\n").filter((line) => line.startsWith("data: "))
-
-    for (const line of lines) {
-      const data = line.slice(6)
-      if (data === "[DONE]") continue
-
-      try {
-        const parsed = JSON.parse(data)
-        const delta = parsed.choices?.[0]?.delta?.content
-        if (delta) controller.enqueue(encoder.encode(delta))
-      } catch {
-        // ignore malformed chunks
-      }
-    }
+  try {
+    // Strip markdown fences in case the model wraps the JSON
+    const clean = content.replace(/```json|```/g, "").trim()
+    const ids: string[] = JSON.parse(clean).map(String)
+    const filtered = recipes.filter(r => ids.includes(String(r.id)))
+    console.log(`[Stream] Dietary filter: ${recipes.length} → ${filtered.length} recipes`)
+    return filtered.length > 0 ? filtered : recipes // fallback if filter is too aggressive
+  } catch {
+    console.error("[Stream] Failed to parse dietary filter response:", content)
+    return recipes
   }
 }
 
+// Ask LLM for a single plain-text recommendation sentence only
+async function getChatText(apiKey: string, userPrompt: string, recipes: Recipe[], preferences: string[]): Promise<string> {
+  const recipeList = recipes.map(r => `- ${r.title}`).join("\n")
+  const prefContext = preferences.length > 0
+    ? `\n\nUser dietary profile: ${preferences.join(", ")}.`
+    : ""
+  const systemPrompt = `You are Hands, a cooking assistant. Write 1 short sentence (under 20 words) recommending these recipes to the user. Return ONLY the sentence, no XML, no formatting.${prefContext}\n\nRecipes:\n${recipeList}`
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      stream: false,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`OpenAI Chat API error: ${await response.text()}`)
+  }
+
+  const data = await response.json()
+  return data.choices?.[0]?.message?.content?.trim() ?? "Here are some recipes you might enjoy."
+}
+
 Deno.serve(async (req) => {
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
   }
 
   try {
     if (req.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method not allowed" }), {
-        status: 405,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      })
+      return new Response(
+        JSON.stringify({ error: "Method not allowed" }),
+        { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      )
     }
 
+    // Get environment variables
     const openaiKey = Deno.env.get("OPENAI_API_KEY")
     const supabaseUrl = Deno.env.get("SUPABASE_URL")
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
 
-    if (!openaiKey) throw new Error("OPENAI_API_KEY not configured")
-    if (!supabaseUrl || !supabaseServiceKey)
+    if (!openaiKey) {
+      throw new Error("OPENAI_API_KEY not configured")
+    }
+    if (!supabaseUrl || !supabaseServiceKey) {
       throw new Error("Supabase credentials not configured")
+    }
 
     const authHeader = req.headers.get("Authorization")
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Optional auth resolution (not required for VI)
+    // Resolve authenticated user
+    let userId: string | null = null
     if (authHeader && authHeader !== `Bearer ${supabaseAnonKey}`) {
       const token = authHeader.replace("Bearer ", "")
-      const { data: { user }, error: authError } =
-        await supabaseAdmin.auth.getUser(token)
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
       if (!authError && user) {
-        console.log("[Stream] Authenticated user:", user.id)
+        userId = user.id
+        console.log("[Stream] Authenticated user:", userId)
+      } else {
+        console.log("[Stream] Auth failed or anonymous:", authError?.message)
+      }
+    } else {
+      console.log("[Stream] No user token — running without personalization")
+    }
+
+    const { prompt, history }: RequestBody = await req.json()
+
+    if (!prompt || typeof prompt !== "string") {
+      return new Response(
+        JSON.stringify({ error: "Invalid prompt" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      )
+    }
+
+    // Use only the current prompt for embedding — mixing in history biases results
+    // toward previous topics and breaks topic changes (e.g. "pasta" → "cookies" still
+    // returns pasta). History is kept in the request body for future use (e.g. LLM context).
+    const contextualQuery = prompt
+
+    // Fetch user taste preferences for post-retrieval filtering
+    let tastePreferences: string[] = []
+    if (userId) {
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("UserTasteProfiles")
+        .select("taste_preferences")
+        .eq("id", userId)
+        .single()
+
+      if (profileError) {
+        console.log("[Stream] Profile fetch error:", profileError.message)
+      } else if (Array.isArray(profile?.taste_preferences)) {
+        tastePreferences = profile.taste_preferences
+        console.log("[Stream] Loaded taste preferences:", tastePreferences.length, "chips")
+      } else {
+        console.log("[Stream] No taste preferences found for user")
       }
     }
 
-    const body: RequestBody = await req.json()
-    const context = typeof body.context === "string" ? body.context : undefined
-    const legacyPrompt = typeof body.prompt === "string" ? body.prompt : undefined
-
-    const hasImage =
-      typeof body.imageBase64 === "string" &&
-      body.imageBase64.length > 0 &&
-      typeof body.mimeType === "string"
-
-    const textPrompt = (context || legacyPrompt || "").trim()
-    if (!hasImage && !textPrompt) {
-      return new Response(JSON.stringify({ error: "Invalid prompt" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      })
-    }
+    console.log("[Stream] Query:", contextualQuery.substring(0, 150))
+    console.log("[Stream] Preferences:", tastePreferences)
 
     const stream = new ReadableStream({
       async start(controller) {
+        const encoder = new TextEncoder()
         try {
-          const viPrompt = hasImage
-            ? buildViPrompt(
-                await extractIngredientsFromImage(
-                  openaiKey,
-                  body.imageBase64 as string,
-                  body.mimeType as MimeType
-                ),
-                context
-              )
-            : textPrompt
+          const embedding = await generateEmbedding(contextualQuery, openaiKey)
 
-          const embedding = await generateEmbedding(viPrompt, openaiKey)
-
-          const { data: rawRecipes, error: rpcError } = await supabaseAdmin.rpc(
-            "match_recipes",
-            {
+          // Run vector search and ingredient search in parallel — no added latency
+          const vectorMatchCount = tastePreferences.length > 0 ? 20 : 10
+          const [vectorResult, ingredientRows] = await Promise.all([
+            supabaseAdmin.rpc("match_recipes", {
               query_embedding: embedding,
-              match_count: 4,
-            }
-          )
+              match_count: vectorMatchCount,
+            }),
+            searchByIngredients(supabaseAdmin, contextualQuery, 20),
+          ])
 
-          if (rpcError) {
-            console.error("RPC error:", rpcError)
-            throw new Error(`Database error: ${rpcError.message}`)
+          if (vectorResult.error) {
+            console.error("[Stream] RPC error:", vectorResult.error)
+            throw new Error(`Database error: ${vectorResult.error.message}`)
           }
 
-          const recipes = transformRecipes(rawRecipes || [])
-          const systemPrompt = buildSystemPrompt(recipes)
+          const filteredVectorRecipes = transformRecipes(vectorResult.data || [])
+          console.log(`[Stream] Vector: ${filteredVectorRecipes.length} | Ingredient: ${ingredientRows.length}`)
 
-          await streamChatCompletion(
-            controller,
-            openaiKey,
-            systemPrompt,
-            viPrompt,
-            hasImage
-              ? {
-                  imageBase64: body.imageBase64 as string,
-                  mimeType: body.mimeType as MimeType,
-                }
-              : undefined
-          )
+          let recipes = reciprocalRankFusion(filteredVectorRecipes, ingredientRows)
+          console.log(`[Stream] RRF merged: ${recipes.length} unique recipes`)
+
+          // Post-retrieval dietary filter — the only reliable way to enforce restrictions
+          if (tastePreferences.length > 0) {
+            recipes = await filterRecipesByPreferences(openaiKey, recipes, tastePreferences)
+          }
+
+          // Cap at 6 for display
+          recipes = recipes.slice(0, 6)
+
+          if (recipes.length === 0) {
+            const xml = `<answer><text>I couldn't find any recipes matching your request and dietary preferences. Try a different search.</text><items></items></answer>`
+            controller.enqueue(encoder.encode(xml))
+            controller.close()
+            return
+          }
+
+          const text = await getChatText(openaiKey, prompt, recipes, tastePreferences)
+
+          const itemsXml = recipes
+            .map(r => `    <item>\n      <id>${r.id}</id>\n      <title>${r.title}</title>\n      <caption>${r.caption}</caption>\n      <image>${r.image}</image>\n    </item>`)
+            .join("\n")
+
+          const xml = `<answer><text>${text}</text><items>\n${itemsXml}\n  </items></answer>`
+          controller.enqueue(encoder.encode(xml))
           controller.close()
         } catch (error) {
-          console.error("Streaming error:", error)
-          const encoder = new TextEncoder()
-          controller.enqueue(
-            encoder.encode(
-              `<answer><text>Sorry, I encountered an error. Please try again.</text><items></items></answer>`
-            )
-          )
+          console.error("[Stream] Streaming error:", error)
+          controller.enqueue(encoder.encode(`<answer><text>Sorry, I encountered an error. Please try again.</text><items></items></answer>`))
           controller.close()
         }
       },
@@ -472,16 +365,18 @@ Deno.serve(async (req) => {
         ...corsHeaders,
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
+        "Connection": "keep-alive",
       },
     })
   } catch (error) {
-    console.error("Edge function error:", error)
-    const errorXml = `<text>Sorry, I encountered an error while searching for recipes. Please try again.</text>`
-    return new Response(errorXml, {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
-    })
+    console.error("[Stream] Edge function error:", error)
+
+    return new Response(
+      `<answer><text>Sorry, I encountered an error while searching for recipes. Please try again.</text><items></items></answer>`,
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+      }
+    )
   }
 })
-
