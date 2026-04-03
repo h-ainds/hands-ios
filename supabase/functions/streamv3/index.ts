@@ -7,9 +7,124 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
+type VisionMimeType = "image/jpeg" | "image/png" | "image/webp" | "image/gif"
+
 interface RequestBody {
   prompt: string
-  history?: string[]  // last 2 user messages, oldest first
+  history?: string[] // last 2 user messages, oldest first
+  imageBase64?: string
+  mimeType?: string
+}
+
+interface VisionIngredient {
+  name: string
+  category: string
+  confidence: "high" | "medium" | "low"
+}
+
+const VISION_ANALYZE_SYSTEM = `You are a kitchen assistant that identifies ingredients from photos.
+
+Given an image of a fridge, pantry, or groceries, identify every visible ingredient.
+
+Rules:
+- Group items into high-level categories such as: vegetables, fruits, proteins, dairy, grains, snacks, condiments, beverages, and other
+- If you are not confident that something is a specific ingredient, either:
+  - classify it as "other" with low confidence, or
+  - omit it entirely if it is too ambiguous
+- Prefer specific ingredient names over generic ones when you are confident (e.g. "cherry tomatoes" instead of "tomatoes")
+- Only include food ingredients, not containers or background objects
+
+Return a JSON object with this exact shape:
+{
+  "ingredients": [
+    {
+      "name": string,
+      "category": string,
+      "confidence": "high" | "medium" | "low"
+    }
+  ]
+}
+`.trim()
+
+function parseVisionIngredientsJson(content: string): VisionIngredient[] {
+  const start = content.indexOf("{")
+  const end = content.lastIndexOf("}")
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("No JSON object found in vision response")
+  }
+  const jsonString = content.slice(start, end + 1)
+  const parsed = JSON.parse(jsonString) as { ingredients?: unknown }
+  if (!parsed || !Array.isArray(parsed.ingredients)) {
+    throw new Error("Invalid JSON structure: missing ingredients array")
+  }
+  return parsed.ingredients
+    .filter(
+      (item): item is VisionIngredient =>
+        typeof item === "object" &&
+        item !== null &&
+        typeof (item as VisionIngredient).name === "string" &&
+        typeof (item as VisionIngredient).category === "string" &&
+        ["high", "medium", "low"].includes((item as VisionIngredient).confidence),
+    )
+    .map((item) => ({
+      name: item.name.trim(),
+      category: item.category.trim(),
+      confidence: item.confidence,
+    }))
+}
+
+/** Same vision task as analyze-image; results feed the shared RAG pipeline (embed + ingredient RPC + RRF). */
+async function extractIngredientsFromPhoto(
+  apiKey: string,
+  imageBase64: string,
+  mimeType: VisionMimeType,
+  userHint: string,
+): Promise<VisionIngredient[]> {
+  const imageUrl = `data:${mimeType};base64,${imageBase64}`
+  const hint = userHint.trim()
+    ? `\n\nUser note (hints only — still list only ingredients you actually see in the image): ${userHint.trim()}`
+    : ""
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4.1-mini",
+      messages: [
+        { role: "system", content: VISION_ANALYZE_SYSTEM },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Here is the image. Identify the ingredients following the instructions.${hint}`,
+            },
+            {
+              type: "image_url",
+              image_url: { url: imageUrl, detail: "auto" },
+            },
+          ],
+        },
+      ],
+      max_completion_tokens: 500,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "Unknown error")
+    throw new Error(`Vision API error (${response.status}): ${errorText.slice(0, 300)}`)
+  }
+
+  const data = await response.json()
+  const content = data.choices?.[0]?.message?.content
+  if (!content || typeof content !== "string") {
+    throw new Error("Vision API returned an empty response")
+  }
+
+  return parseVisionIngredientsJson(content)
 }
 
 // Raw response from match_recipes RPC
@@ -189,12 +304,21 @@ async function filterRecipesByPreferences(
 }
 
 // Ask LLM for a single plain-text recommendation sentence only
-async function getChatText(apiKey: string, userPrompt: string, recipes: Recipe[], preferences: string[]): Promise<string> {
+async function getChatText(
+  apiKey: string,
+  userPrompt: string,
+  recipes: Recipe[],
+  preferences: string[],
+  photoIngredientSummary?: string,
+): Promise<string> {
   const recipeList = recipes.map(r => `- ${r.title}`).join("\n")
   const prefContext = preferences.length > 0
     ? `\n\nUser dietary profile: ${preferences.join(", ")}.`
     : ""
-  const systemPrompt = `You are Hands, a cooking assistant. Write 1 short sentence (under 20 words) recommending these recipes to the user. Return ONLY the sentence, no XML, no formatting.${prefContext}\n\nRecipes:\n${recipeList}`
+  const photoContext = photoIngredientSummary
+    ? `\n\nThe user shared a photo; these ingredients were identified from it: ${photoIngredientSummary}. Recipes below were matched from those ingredients (and their request). Never say you cannot see photos, images, or pictures — speak naturally as if you already understood what they have.`
+    : ""
+  const systemPrompt = `You are Hands, a cooking assistant. Write 1 short sentence (under 20 words) recommending these recipes to the user. Return ONLY the sentence, no XML, no formatting.${prefContext}${photoContext}\n\nRecipes:\n${recipeList}`
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -265,7 +389,8 @@ Deno.serve(async (req) => {
       console.log("[Stream] No user token — running without personalization")
     }
 
-    const { prompt, history }: RequestBody = await req.json()
+    const body = (await req.json()) as RequestBody
+    const { prompt, imageBase64, mimeType } = body
 
     if (!prompt || typeof prompt !== "string") {
       return new Response(
@@ -273,11 +398,6 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
     }
-
-    // Use only the current prompt for embedding — mixing in history biases results
-    // toward previous topics and breaks topic changes (e.g. "pasta" → "cookies" still
-    // returns pasta). History is kept in the request body for future use (e.g. LLM context).
-    const contextualQuery = prompt
 
     // Fetch user taste preferences for post-retrieval filtering
     let tastePreferences: string[] = []
@@ -298,13 +418,45 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log("[Stream] Query:", contextualQuery.substring(0, 150))
     console.log("[Stream] Preferences:", tastePreferences)
 
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder()
         try {
+          // Text-only: embedding + RPCs use the user prompt. With a photo: extract
+          // ingredients first (same vision task as analyze-image), then run the same
+          // vector + ingredient + RRF pipeline on "ingredients + user ask".
+          let contextualQuery = prompt
+          let photoIngredientSummary: string | undefined
+
+          const allowedVision = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+          if (
+            typeof imageBase64 === "string" &&
+            imageBase64.length > 0 &&
+            typeof mimeType === "string" &&
+            allowedVision.includes(mimeType)
+          ) {
+            try {
+              const ingredients = await extractIngredientsFromPhoto(
+                openaiKey,
+                imageBase64,
+                mimeType as VisionMimeType,
+                prompt,
+              )
+              const names = ingredients.map(i => i.name.trim()).filter(Boolean)
+              if (names.length > 0) {
+                photoIngredientSummary = names.join(", ")
+                contextualQuery = `${photoIngredientSummary}. ${prompt}`.trim()
+                console.log("[Stream] Photo ingredients (preview):", photoIngredientSummary.substring(0, 120))
+              }
+            } catch (visionErr) {
+              console.error("[Stream] Vision extraction failed, using text prompt only:", visionErr)
+            }
+          }
+
+          console.log("[Stream] Retrieval query:", contextualQuery.substring(0, 150))
+
           const embedding = await generateEmbedding(contextualQuery, openaiKey)
 
           // Run vector search and ingredient search in parallel — no added latency
@@ -343,7 +495,13 @@ Deno.serve(async (req) => {
             return
           }
 
-          const text = await getChatText(openaiKey, prompt, recipes, tastePreferences)
+          const text = await getChatText(
+            openaiKey,
+            prompt,
+            recipes,
+            tastePreferences,
+            photoIngredientSummary,
+          )
 
           const itemsXml = recipes
             .map(r => `    <item>\n      <id>${r.id}</id>\n      <title>${r.title}</title>\n      <caption>${r.caption}</caption>\n      <image>${r.image}</image>\n    </item>`)
