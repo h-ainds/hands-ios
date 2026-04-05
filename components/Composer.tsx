@@ -30,7 +30,7 @@ const Composer = ({ onAskPress, onSearchPress, onYouPress, onScanPress }: Compos
         <TextInput
           pointerEvents="none"
           placeholder="Ask"
-          placeholderTextColor="#000000"
+          placeholderTextColor="#9F9F9F"
           className="rounded-full bg-white px-4 py-3 text-lg text-black font-regular"
         />
       </Pressable>
