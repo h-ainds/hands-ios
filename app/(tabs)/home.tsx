@@ -131,7 +131,7 @@ export default function HomeScreen() {
   }
 
   const handleScanPress = () => {
-    router.push('/scan')
+    router.push('/ask?openCamera=1')
   }
 
   return (
