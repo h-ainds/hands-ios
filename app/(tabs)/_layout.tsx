@@ -60,7 +60,7 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* CENTER + ASK (unchanged) */}
+      {/* CENTER ACTION BUTTON (CAMERA) */}
       <Tabs.Screen
         name="index"
         options={{
@@ -72,22 +72,22 @@ export default function TabsLayout() {
                 justifyContent: "center",
               }}
             >
-              <Pressable
-                onPress={() => router.push("/ask")}
-                style={{
-                  width: 48,
-                  height: 36,
-                  borderRadius: 22,
-                  backgroundColor: "#6CD401",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
+<Pressable
+  onPress={() => router.push("/ask")}
+  style={{
+    width: 42,
+    height: 42,        // ← match width
+    borderRadius: 24,  // ← exactly half of width/height
+    backgroundColor: "#6CD401",
+    alignItems: "center",
+    justifyContent: "center",
+  }}
+>
                 <SymbolView
-                  name="plus"
-                  size={20}
+                  name="camera.viewfinder"
+                  size={26}
                   tintColor="#FFFFFF"
-                  weight="regular"
+                  weight="semibold"
                 />
               </Pressable>
             </View>
