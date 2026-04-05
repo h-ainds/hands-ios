@@ -311,7 +311,7 @@ export default function AskScreen() {
                   <TextInput
                     value={input}
                     onChangeText={setInput}
-                    placeholder="Additional context..."
+                    placeholder="Ask"
                     placeholderTextColor="#9F9F9F"
                     className="flex-1 text-black text-base mr-2"
                     onSubmitEditing={handleSubmit}
@@ -378,7 +378,7 @@ export default function AskScreen() {
               <TextInput
                 value={input}
                 onChangeText={setInput}
-                placeholder="Additional context..."
+                placeholder="Ask something else"
                 placeholderTextColor="#9F9F9F"
                 className="flex-1 text-black text-base"
                 style={{
