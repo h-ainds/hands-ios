@@ -22,7 +22,7 @@ export default function BackButton({ onPress }: BackButtonProps) {
       onPress={handlePress}
       style={{
         position: 'absolute',
-        top: 56,
+        top: 0,
         left: 16,
         width: 44,
         height: 44,
