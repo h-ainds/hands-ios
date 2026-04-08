@@ -43,20 +43,6 @@ export default function ChatView({
     return recipeCards.find(card => card.messageIndex === index)
   }
 
-  // Empty state
-  if ((!messages || messages.length === 0) && !isTyping) {
-    return (
-      <View className="flex-1 items-center justify-center px-8">
-        <Text className="text-2.5xl font-semibold text-black text-center tracking-tighter">
-          Turn leftovers into dinner
-        </Text>
-        <Text className="text-base text-secondary-muted text-center mt-2 tracking-tight leading-6">
-          Get recipe ideas tailored to your ingredients and goals.
-        </Text>
-      </View>
-    )
-  }
-
   return (
     <ScrollView
       ref={scrollViewRef}
