@@ -195,9 +195,6 @@ export default function AskScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      {/* Back button — floats over chat once conversation starts */}
-      {isChatStarted && <BackButton onPress={handleBack} />}
-
       <KeyboardAvoidingView
         behavior="padding"
         keyboardVerticalOffset={0}
@@ -205,9 +202,6 @@ export default function AskScreen() {
       >
         {/* ── Chat area fills all available space ── */}
         <View className="flex-1">
-          {/* Back button — pre-chat floats via BackButton's absolute positioning */}
-          {!isChatStarted && <BackButton onPress={handleBack} />}
-
           {!isChatStarted && !hasContent ? (
             <View className="flex-1 items-center justify-center px-8">
               <Text className="text-2.5xl font-semibold text-black text-center tracking-tighter">
@@ -317,6 +311,9 @@ export default function AskScreen() {
           )}
         </View>
       </KeyboardAvoidingView>
+
+      {/* Back button — always floating above all content, outside scroll/keyboard flow */}
+      <BackButton onPress={handleBack} />
     </SafeAreaView>
   )
 }
