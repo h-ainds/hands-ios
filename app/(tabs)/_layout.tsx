@@ -4,7 +4,6 @@ import { SymbolView } from "expo-symbols";
 
 export default function TabsLayout() {
   const pathname = usePathname();
-
   const isHomeActive =
     pathname === "/home" || pathname?.startsWith("/recipe/");
   const isProfileActive = pathname?.startsWith("/you");
@@ -33,8 +32,9 @@ export default function TabsLayout() {
               onPress={props.onPress}
               style={{
                 flex: 1,
-                alignItems: "center",
-                justifyContent: "center",
+                alignItems: "flex-end",
+                justifyContent: "flex-start",
+                paddingTop: 20,
               }}
             >
               <View
@@ -48,7 +48,7 @@ export default function TabsLayout() {
                 <Text
                   style={{
                     fontSize: 16,
-                    fontWeight: isHomeActive ? "700" : "700",
+                    fontWeight: "700",
                     color: isHomeActive ? "#000" : "#9F9F9F",
                   }}
                 >
@@ -69,20 +69,21 @@ export default function TabsLayout() {
               style={{
                 flex: 1,
                 alignItems: "center",
-                justifyContent: "center",
+                justifyContent: "flex-start",
+                paddingTop: 17,
               }}
             >
-<Pressable
-  onPress={() => router.push("/ask")}
-  style={{
-    width: 42,
-    height: 42,        // ← match width
-    borderRadius: 24,  // ← exactly half of width/height
-    backgroundColor: "#6CD401",
-    alignItems: "center",
-    justifyContent: "center",
-  }}
->
+              <Pressable
+                onPress={() => router.push("/ask?openCamera=1")}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 24,
+                  backgroundColor: "#6CD401",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
                 <SymbolView
                   name="camera.viewfinder"
                   size={26}
@@ -107,8 +108,9 @@ export default function TabsLayout() {
               onPress={props.onPress}
               style={{
                 flex: 1,
-                alignItems: "center",
-                justifyContent: "center",
+                alignItems: "flex-start",
+                justifyContent: "flex-start",
+                paddingTop: 20,
               }}
             >
               <View
@@ -116,15 +118,13 @@ export default function TabsLayout() {
                   paddingHorizontal: 20,
                   paddingVertical: 8,
                   borderRadius: 999,
-                  backgroundColor: isProfileActive
-                    ? "#f7f7f7"
-                    : "transparent",
+                  backgroundColor: isProfileActive ? "#f7f7f7" : "transparent",
                 }}
               >
                 <Text
                   style={{
                     fontSize: 16,
-                    fontWeight: isProfileActive ? "700" : "700",
+                    fontWeight: "700",
                     color: isProfileActive ? "#000" : "#9F9F9F",
                   }}
                 >
