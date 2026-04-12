@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, Image, ActionSheetIOS, Alert } from 'react-native'
+
 import * as ImagePicker from 'expo-image-picker'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
-import { LinearGradient } from 'expo-linear-gradient'
 import ChatView from '@/components/chat/ChatView'
 import { useRecipeChat } from '@/hooks/useRecipeChat'
 import { supabase } from '@/lib/supabase/client'
@@ -33,27 +33,22 @@ export default function AskScreen() {
 
   const isChatStarted = messages.length > 0
   const isTyping = status === 'connecting' || status === 'streaming' || status === 'typing'
-
-  const [inputHeight, setInputHeight] = useState(40)
+  const hasContent = input.trim().length > 0 || !!attachment?.base64
 
   useEffect(() => {
     const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (user) setUserId(user.id)
     }
     getUser()
   }, [])
 
-  // ⭐ LOAD CONVERSATION IF conversationId IS PROVIDED
   useEffect(() => {
     if (conversationId && !conversationLoaded) {
       loadConversation(conversationId as string)
     }
   }, [conversationId])
 
-  // Pre-populate composer when navigated with legacy params.
   useEffect(() => {
     if (conversationId) return
 
@@ -66,23 +61,13 @@ export default function AskScreen() {
           ? routePrompt[0]
           : undefined
 
-    // Legacy: previous scan flow pushed imageUri + a fully constructed prompt.
-    // We keep this for any deep links/history that still include those params.
     if (nextImageUri) {
-      // NOTE: no base64 available from legacy route; user will need to re-attach for VI.
-      // We still preview the image for continuity.
-      setAttachment({
-        uri: nextImageUri,
-        base64: '',
-        mimeType: 'image/jpeg',
-      })
+      setAttachment({ uri: nextImageUri, base64: '', mimeType: 'image/jpeg' })
     }
     if (nextPrompt && !input.trim()) setInput(nextPrompt)
   }, [conversationId, imageUri, routePrompt])
 
-  const clearAttachment = useCallback(() => {
-    setAttachment(null)
-  }, [])
+  const clearAttachment = useCallback(() => setAttachment(null), [])
 
   const pickAttachment = useCallback(async (source: ImageSource) => {
     try {
@@ -127,45 +112,30 @@ export default function AskScreen() {
           ? 'image/webp'
           : 'image/jpeg'
 
-      setAttachment({
-        uri: asset.uri,
-        base64: asset.base64,
-        mimeType,
-      })
+      setAttachment({ uri: asset.uri, base64: asset.base64, mimeType })
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to pick image.')
     }
   }, [])
 
   const openLibrarySecondary = useCallback(() => {
-    // iOS: native action sheet. Android: simple alert list.
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Photo Library', 'Cancel'],
-          cancelButtonIndex: 1,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 0) pickAttachment('library')
-        }
+        { options: ['Photo Library', 'Cancel'], cancelButtonIndex: 1 },
+        (buttonIndex) => { if (buttonIndex === 0) pickAttachment('library') }
       )
       return
     }
-
     Alert.alert('Attach photo', 'Choose a source', [
       { text: 'Photo Library', onPress: () => pickAttachment('library') },
       { text: 'Cancel', style: 'cancel' },
     ])
   }, [pickAttachment])
 
-  // Repurposed camera entry point: /ask?openCamera=1
   useEffect(() => {
     if (conversationId) return
-    const shouldOpen =
-      openCamera === '1' || (Array.isArray(openCamera) && openCamera[0] === '1')
+    const shouldOpen = openCamera === '1' || (Array.isArray(openCamera) && openCamera[0] === '1')
     if (!shouldOpen) return
-
-    // Fire and forget (permission prompts are handled inside).
     pickAttachment('camera')
   }, [conversationId, openCamera, pickAttachment])
 
@@ -177,31 +147,21 @@ export default function AskScreen() {
         .eq('id', convId)
         .single()
 
-      if (error) {
-        console.error('Error loading conversation:', error)
-        return
-      }
+      if (error) { console.error('Error loading conversation:', error); return }
 
       if (data?.content) {
-        // Load messages
         setMessages(data.content)
-
-        // Load recipe cards from saved messages
         const loadedRecipeCards: any[] = []
         data.content.forEach((msg: any, index: number) => {
-          if (msg.role === 'assistant' && msg.recipes && msg.recipes.length > 0) {
+          if (msg.role === 'assistant' && msg.recipes?.length > 0) {
             loadedRecipeCards.push({
               messageIndex: index,
-              recipes: {
-                text: msg.content,
-                items: msg.recipes
-              }
+              recipes: { text: msg.content, items: msg.recipes },
             })
           }
         })
         setRecipeCards(loadedRecipeCards)
       }
-
       setConversationLoaded(true)
     } catch (error) {
       console.error('Error in loadConversation:', error)
@@ -209,206 +169,151 @@ export default function AskScreen() {
   }
 
   const handleSubmit = useCallback(async () => {
-    if (isLoading) return
+    if (isLoading || !hasContent) return
 
     const typedContext = input.trim()
     const hasImage = !!attachment?.base64
-
-    if (!typedContext && !hasImage) return
-
-    // UX: the text field is optional context. If user sends only an image, the backend
-    // will apply a default prompt (“What can I make with these ingredients?”).
     const displayText = typedContext || 'Sent a photo'
+
     setInput('')
 
     await sendMessage(
       displayText,
       conversationId as string | undefined,
       hasImage
-        ? {
-            imageBase64: attachment!.base64,
-            mimeType: attachment!.mimeType,
-            context: typedContext,
-          }
+        ? { imageBase64: attachment!.base64, mimeType: attachment!.mimeType, context: typedContext }
         : { context: typedContext }
     )
 
-    // Clear attachment after sending.
     if (hasImage) clearAttachment()
-  }, [input, isLoading, sendMessage, conversationId, attachment, clearAttachment])
+  }, [input, isLoading, hasContent, sendMessage, conversationId, attachment, clearAttachment])
 
   const handleBack = useCallback(() => {
     if (isLoading) cancelRequest()
     router.back()
   }, [isLoading, cancelRequest, router])
 
-  const SubmitButton = ({ disabled }: { disabled: boolean }) => (
-    <Pressable onPress={handleSubmit} disabled={disabled}>
-      <View
-        className="px-2 py-2 rounded-full items-center justify-center bg-primary"
-        style={{ opacity: disabled ? 0.5 : 1 }}  >
-        <SymbolView 
-        name="arrow.up" 
-        size={18} 
-        tintColor="#FFFFFF" 
-        weight="semibold"
-        />
-      </View>
-    </Pressable>
-  )
-
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
-{isChatStarted && <BackButton />}
+    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
+        keyboardVerticalOffset={0}
         className="flex-1"
       >
-        {/* Top Input */}
-        {!isChatStarted && (
-          <View className="px-4 pt-3">
-            <View className="flex-row items-center gap-3">
-              {/* Back */}
-              {!isChatStarted && (
-  <Pressable
-    onPress={handleBack}
-    className="w-10 h-10 rounded-full bg-white items-center justify-center shadow-hands"
-  >
-    <SymbolView name="chevron.left" size={20} tintColor="#000000" />
-  </Pressable>
-)}
-
-              {/* Input */}
-              <View className="flex-1">
-                {attachment?.uri && (
-                  <View className="flex-row items-center bg-secondary rounded-2xl px-3 py-2 mb-2">
-                    <Image
-                      source={{ uri: attachment.uri }}
-                      className="w-14 h-14 rounded-2xl bg-white"
-                    />
-                    <Pressable
-                      onPress={clearAttachment}
-                      className="ml-3 p-2 rounded-full bg-white"
-                    >
-                      <SymbolView name="xmark" size={16} tintColor="#6B7280" />
-                    </Pressable>
-                  </View>
-                )}
-
-                <View className="flex-row items-center bg-white rounded-full px-4 py-2.5 shadow-hands">
-                  <Pressable
-                    onPress={() => pickAttachment('camera')}
-                    onLongPress={openLibrarySecondary}
-                    disabled={isLoading}
-                    className="mr-2"
-                    style={{ opacity: isLoading ? 0.5 : 1 }}
-                  >
-                    <View className="w-9 h-9 rounded-full bg-secondary items-center justify-center">
-                      <SymbolView name="camera.fill" size={16} tintColor="#9F9F9F" />
-                    </View>
-                  </Pressable>
-
-                  <TextInput
-                    value={input}
-                    onChangeText={setInput}
-                    placeholder="Ask"
-                    placeholderTextColor="#9F9F9F"
-                    className="flex-1 text-black text-base mr-2"
-                    onSubmitEditing={handleSubmit}
-                    returnKeyType="send"
-                    autoFocus
-                    editable={!isLoading}
-                  />
-
-                  {(input.trim().length > 0 || !!attachment?.base64) && (
-                    <SubmitButton disabled={isLoading} />
-                  )}
-                </View>
-              </View>
+        {/* ── Chat area fills all available space ── */}
+        <View className="flex-1">
+          {!isChatStarted && !hasContent ? (
+            <View className="flex-1 items-center justify-center px-8">
+              <Text className="text-2.5xl font-semibold text-black text-center tracking-tighter">
+                Turn leftovers into dinner
+              </Text>
+              <Text className="text-base text-secondary-muted text-center mt-2 tracking-tight leading-6">
+                Get recipe ideas tailored to your ingredients and goals.
+              </Text>
             </View>
-          </View>
-        )}
-
-        {/* Chat */}
-        <View className="flex-1 mt-4">
-          <ChatView messages={messages} isTyping={isTyping} recipeCards={recipeCards} />
+          ) : (
+            <ChatView messages={messages} isTyping={isTyping} recipeCards={recipeCards} />
+          )}
         </View>
 
-        {/* Bottom Input */}
-        {isChatStarted && (
-          <View className="px-16 pb-12 pt-2 bg-transparent">
-            {attachment?.uri && (
-              <View className="flex-row items-center bg-secondary rounded-2xl px-3 py-2 mb-3">
-                <Image
-                  source={{ uri: attachment.uri }}
-                  className="w-14 h-14 rounded-2xl bg-white"
-                />
-                <Pressable
-                  onPress={clearAttachment}
-                  className="ml-3 p-2 rounded-full bg-white"
-                >
-                  <SymbolView name="xmark" size={16} tintColor="#6B7280" />
-                </Pressable>
-              </View>
-            )}
-
+        {/* ── Composer — always anchored above keyboard ── */}
+        <View className="px-4 pb-4">
+          {/* Attachment preview pill */}
+          {attachment?.uri && (
             <View
-              className="flex-row items-center bg-white rounded-full px-4"
-              style={{
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.06,
-                shadowRadius: 9,
-                elevation: 2,
-                paddingVertical: 10,
-              }}
+              className="flex-row items-center bg-gray-100 rounded-2xl px-3 py-2 mb-2 self-start"
+              style={{ maxWidth: '70%' }}
             >
-              <Pressable
-                onPress={() => pickAttachment('camera')}
-                onLongPress={openLibrarySecondary}
-                disabled={isLoading}
-                className="mr-2"
-                style={{ opacity: isLoading ? 0.5 : 1 }}
-              >
-                <View className="w-9 h-9 rounded-full bg-secondary items-center justify-center">
-                  <SymbolView name="camera.fill" size={16} tintColor="#9F9F9F" />
-                </View>
-              </Pressable>
-
-              <TextInput
-                value={input}
-                onChangeText={setInput}
-                placeholder="Ask something else"
-                placeholderTextColor="#9F9F9F"
-                className="flex-1 text-black text-base"
-                style={{
-                  paddingTop: 2,
-                  paddingBottom: 2,
-                  lineHeight: 20,
-                  textAlignVertical: 'center',
-                }}
-                multiline
-                onSubmitEditing={handleSubmit}
-                editable={!isLoading}
+              <Image
+                source={{ uri: attachment.uri }}
+                className="w-10 h-10 rounded-xl"
               />
-
-              {(input.trim().length > 0 || !!attachment?.base64) && (
-                <SubmitButton disabled={isLoading} />
-              )}
+              <Pressable
+                onPress={clearAttachment}
+                className="ml-2 w-6 h-6 rounded-full bg-white items-center justify-center"
+                hitSlop={8}
+              >
+                <SymbolView name="xmark" size={11} tintColor="#6B7280" weight="semibold" />
+              </Pressable>
             </View>
+          )}
 
-            {isLoading && (
-              <View className="items-center mt-2">
-                <Text className="text-xs text-secondary-placeholder">
-                  {status === 'connecting' && 'Getting recipes...'}
-                  {status === 'streaming' && 'Getting recipes...'}
-                  {status === 'typing' && 'Typing...'}
-                </Text>
+          {/* Text Input Composer */}
+          <View
+            className="flex-row items-center bg-white rounded-full px-2"
+            style={{
+              height: 48,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.08,
+              shadowRadius: 8,
+              elevation: 3,
+            }}
+          >
+            {/* Camera button */}
+            <Pressable
+              onPress={() => pickAttachment('camera')}
+              onLongPress={openLibrarySecondary}
+              disabled={isLoading}
+              hitSlop={6}
+              style={{ opacity: isLoading ? 0.4 : 1, marginRight: 6 }}
+            >
+              <View className="w-10 h-10 rounded-full bg-white items-center justify-center">
+                <SymbolView name="camera" size={18} tintColor="#000000" weight="semibold" />
               </View>
-            )}
+            </Pressable>
+
+            {/* Text input */}
+            <TextInput
+              value={input}
+              onChangeText={setInput}
+              placeholder="Ask"
+              placeholderTextColor="#9F9F9F"
+              className="flex-1 text-black"
+              style={{ fontSize: 16, paddingVertical: 0, lineHeight: 18 }}
+              returnKeyType="send"
+              onSubmitEditing={handleSubmit}
+              editable={!isLoading}
+              autoFocus={!conversationId}
+              blurOnSubmit={false}
+            />
+
+            {/* Submit button — always visible, muted or green */}
+            <Pressable
+              onPress={handleSubmit}
+              disabled={isLoading}
+              hitSlop={6}
+              style={{ marginLeft: 6, opacity: isLoading ? 0.4 : 1 }}
+            >
+              <View
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: hasContent ? '#6CD401' : '#F7F7F7' }}
+              >
+                <SymbolView
+                  name="arrow.up"
+                  size={18}
+                  tintColor={hasContent ? '#FFFFFF' : '#B2B2B2'}
+                  weight="semibold"
+                />
+              </View>
+            </Pressable>
           </View>
-        )}
+
+          {/* Streaming status hint */}
+          {isLoading && (
+            <View className="items-center mt-1.5">
+              <Text style={{ fontSize: 12, color: '#AFAFAF' }}>
+                {status === 'connecting' || status === 'streaming'
+                  ? 'Getting recipes...'
+                  : 'Typing...'}
+              </Text>
+            </View>
+          )}
+        </View>
       </KeyboardAvoidingView>
+
+      {/* Back button — always floating above all content, outside scroll/keyboard flow */}
+      <BackButton onPress={handleBack} />
     </SafeAreaView>
   )
 }
