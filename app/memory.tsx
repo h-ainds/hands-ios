@@ -176,7 +176,7 @@ export default function MemoryScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
-          <Text className="text-3xl font-bold text-black mb-6">Memory</Text>
+          <Text className="text-3xl font-extrabold tracking-tighter text-black mb-6">Memory</Text>
 
           {loading ? (
             <ActivityIndicator size="small" className="py-4" />

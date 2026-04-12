@@ -194,7 +194,7 @@ export default function OnboardingProfileScreen() {
         >
           {/* Header */}
           <View className="mt-0">
-            <Text className="text-3xl font-extrabold tracking-tighter text-black">
+            <Text className="text-3xl font-extrabold tracking-tighter leading-none text-black">
               What should we know about you?
             </Text>
             <Text className="text-base tracking-tighter text-secondary-placeholder mt-2">
