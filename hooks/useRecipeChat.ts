@@ -150,6 +150,13 @@ export function useRecipeChat(
       const userMessage = message.trim();
       let activeConversationId = conversationId || currentConversationId;
 
+      // Capture history BEFORE setMessages — once setMessages fires and the effect
+      // runs, messagesRef will include the new user message, making findLast() in the
+      // edge function return the current prompt instead of the previous one.
+      const historySnapshot = messagesRef.current
+        .slice(-6)
+        .map((m) => ({ role: m.role, content: m.content }));
+
       // Add user message and update status
       if (isMountedRef.current) {
         setMessages((prev) => [
@@ -228,7 +235,7 @@ export function useRecipeChat(
           throw new Error("Supabase configuration missing");
         }
 
-        const functionUrl = `${supabaseUrl}/functions/v1/streamv3`;
+        const functionUrl = `${supabaseUrl}/functions/v1/streamv4`;
 
         // Make POST request to streaming endpoint
         const response = await fetch(functionUrl, {
@@ -241,10 +248,7 @@ export function useRecipeChat(
           },
           body: JSON.stringify({
             prompt: userMessage,
-            history: messagesRef.current
-              .filter((m) => m.role === "user")
-              .slice(-2)
-              .map((m) => m.content),
+            history: historySnapshot,
           }),
           signal: abortControllerRef.current.signal,
         });

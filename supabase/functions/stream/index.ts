@@ -9,7 +9,7 @@ const corsHeaders = {
 
 interface RequestBody {
   prompt: string
-  history?: string[]  // last 2 user messages, oldest first
+  history?: Array<{ role: "user" | "assistant"; content: string }>
 }
 
 // Raw response from match_recipes RPC
@@ -189,7 +189,13 @@ async function filterRecipesByPreferences(
 }
 
 // Ask LLM for a single plain-text recommendation sentence only
-async function getChatText(apiKey: string, userPrompt: string, recipes: Recipe[], preferences: string[]): Promise<string> {
+async function getChatText(
+  apiKey: string,
+  userPrompt: string,
+  recipes: Recipe[],
+  preferences: string[],
+  history: Array<{ role: "user" | "assistant"; content: string }>
+): Promise<string> {
   const recipeList = recipes.map(r => `- ${r.title}`).join("\n")
   const prefContext = preferences.length > 0
     ? `\n\nUser dietary profile: ${preferences.join(", ")}.`
@@ -207,6 +213,7 @@ async function getChatText(apiKey: string, userPrompt: string, recipes: Recipe[]
       stream: false,
       messages: [
         { role: "system", content: systemPrompt },
+        ...history,
         { role: "user", content: userPrompt },
       ],
     }),
@@ -274,10 +281,15 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Use only the current prompt for embedding — mixing in history biases results
-    // toward previous topics and breaks topic changes (e.g. "pasta" → "cookies" still
-    // returns pasta). History is kept in the request body for future use (e.g. LLM context).
-    const contextualQuery = prompt
+    // Build contextual query from last 4 user turns + current prompt.
+    // This gives a sliding window of context so "make it spicy" and "no nuts"
+    // carry forward the original topic across multiple turns.
+    const userHistory = (history ?? [])
+      .filter(m => m.role === "user")
+      .slice(-4)
+      .map(m => m.content)
+    const contextualQuery = [...userHistory, prompt].join(" ")
+    console.log("[Stream] Contextual query:", contextualQuery.substring(0, 200))
 
     // Fetch user taste preferences for post-retrieval filtering
     let tastePreferences: string[] = []
@@ -328,9 +340,22 @@ Deno.serve(async (req) => {
           let recipes = reciprocalRankFusion(filteredVectorRecipes, ingredientRows)
           console.log(`[Stream] RRF merged: ${recipes.length} unique recipes`)
 
-          // Post-retrieval dietary filter — the only reliable way to enforce restrictions
-          if (tastePreferences.length > 0) {
-            recipes = await filterRecipesByPreferences(openaiKey, recipes, tastePreferences)
+          // Extract session constraints from follow-up messages.
+          // Skip the first user message (topic query) — only subsequent ones are constraints.
+          // e.g. "pasta recipes" → topic, "make it vegetarian" + "no cream sauce" → constraints
+          const userMessagesInHistory = (history ?? []).filter(m => m.role === "user")
+          const isFollowUp = userMessagesInHistory.length > 0
+          const sessionConstraints = isFollowUp
+            ? [...userMessagesInHistory.slice(1).map(m => m.content), prompt]
+            : []
+
+          const allConstraints = [...tastePreferences, ...sessionConstraints]
+          console.log("[Stream] Session constraints:", sessionConstraints)
+
+          // Post-retrieval filter — LLM handles negation ("no cream sauce") correctly,
+          // unlike vector embeddings which are blind to negation
+          if (allConstraints.length > 0) {
+            recipes = await filterRecipesByPreferences(openaiKey, recipes, allConstraints)
           }
 
           // Cap at 6 for display
@@ -343,7 +368,9 @@ Deno.serve(async (req) => {
             return
           }
 
-          const text = await getChatText(openaiKey, prompt, recipes, tastePreferences)
+          // Pass only user turns — assistant recommendation sentences add tokens without improving context
+          const userOnlyHistory = (history ?? []).filter(m => m.role === "user")
+          const text = await getChatText(openaiKey, prompt, recipes, tastePreferences, userOnlyHistory)
 
           const itemsXml = recipes
             .map(r => `    <item>\n      <id>${r.id}</id>\n      <title>${r.title}</title>\n      <caption>${r.caption}</caption>\n      <image>${r.image}</image>\n    </item>`)
