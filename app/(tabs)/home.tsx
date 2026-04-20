@@ -105,7 +105,7 @@ export default function HomeScreen() {
   if (loading) {
     return (
       <View className="flex-1 bg-white justify-center items-center">
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color="#6CD401" />
       </View>
     )
   }
@@ -126,41 +126,41 @@ export default function HomeScreen() {
     router.push('/search')
   }
 
-  const handleYouPress = () => {
-    router.push('/you')
-  }
-
+  
   return (
     <View className="flex-1 bg-white">
-      {/* Chat History Button - Top Left */}
-      <Pressable
-        onPress={() => setIsChatHistoryOpen(true)}
-        style={{
-          position: 'absolute',
-          top: 56,
-          left: 16,
-          width: 44,
-          height: 44,
-          borderRadius: 22,
-          backgroundColor: 'white',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
-          elevation: 3,
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 50,
-        }}
-      >
-        <SymbolView name="text.alignleft" size={20} tintColor="#000000" />
-      </Pressable>
-      
+    
+{/* Chat History Button - Top Left */}
+<Pressable
+  onPress={() => setIsChatHistoryOpen(true)}
+  className="absolute w-12 h-12 rounded-full bg-white items-center justify-center z-50 left-4 top-[50px] shadow-hands"
+>
+  <SymbolView
+    name="message"
+    size={23}
+    weight="semibold"
+    tintColor="#000000"
+  />
+</Pressable>
+
+{/* Search Button - Top Right */}
+<Pressable
+  onPress={handleSearchPress}
+  className="absolute w-12 h-12 rounded-full bg-white items-center justify-center z-50 right-4 top-[50px] shadow-hands"
+>
+  <SymbolView
+    name="magnifyingglass"
+    size={23}
+    weight="semibold"
+    tintColor="#000000"
+  />
+</Pressable>
+
       <ScrollView className="flex-1" contentContainerClassName="pb-20">
         {/* Hero Section */}
         <View className="w-full">
           {heroLoading ? (
-            <View className="h-[56vh] bg-gray-200 justify-center items-center">
+            <View className="h-[54vh] bg-gray-200 justify-center items-center">
               <ActivityIndicator size="large" />
             </View>
           ) : heroRecipe ? (
@@ -168,7 +168,7 @@ export default function HomeScreen() {
               <View className="relative">
                 <Image
                   source={{ uri: heroRecipe.image ?? undefined }}
-                  className="w-full h-[56vh]"
+                  className="w-full h-[54vh]"
                   resizeMode="cover"
                 />
                 {/* Gradient Overlay */}
@@ -272,10 +272,8 @@ export default function HomeScreen() {
 
       {/* Composer Fixed at Bottom */}
       <View className="absolute flex-row items-center bottom-4">
-        <Composer 
+        <Composer
           onAskPress={handleAskPress}
-          onSearchPress={handleSearchPress}
-          onYouPress={handleYouPress}
         />
       </View>
       

@@ -11,10 +11,9 @@ type VisionMimeType = "image/jpeg" | "image/png" | "image/webp" | "image/gif"
 
 interface RequestBody {
   prompt: string
-  history?: string[]
+  history?: string[] // last 2 user messages, oldest first
   imageBase64?: string
   mimeType?: string
-  context?: string
 }
 
 interface VisionIngredient {
@@ -74,6 +73,7 @@ function parseVisionIngredientsJson(content: string): VisionIngredient[] {
     }))
 }
 
+/** Same vision task as analyze-image; results feed the shared RAG pipeline (embed + ingredient RPC + RRF). */
 async function extractIngredientsFromPhoto(
   apiKey: string,
   imageBase64: string,
@@ -127,6 +127,7 @@ async function extractIngredientsFromPhoto(
   return parseVisionIngredientsJson(content)
 }
 
+// Raw response from match_recipes RPC
 interface MatchRecipeRow {
   recipe_id: string
   similarity: number
@@ -137,6 +138,7 @@ interface MatchRecipeRow {
   }
 }
 
+// Raw response from search_recipes_by_ingredients RPC
 interface IngredientSearchRow {
   recipe_id: string
   rank: number
@@ -145,6 +147,7 @@ interface IngredientSearchRow {
   image: string
 }
 
+// Transformed recipe for XML output
 interface Recipe {
   id: string
   title: string
@@ -174,12 +177,10 @@ async function generateEmbedding(text: string, apiKey: string): Promise<number[]
   return data.data[0].embedding
 }
 
-// For image queries skipThreshold=true: ingredient embeddings score lower against
-// recipe prose so any threshold cuts too many valid results. RRF handles ranking.
-// For text queries: 0.2 threshold filters weak matches before RRF.
-function transformRecipes(rows: MatchRecipeRow[], skipThreshold = false): Recipe[] {
+// Transform raw RPC response to Recipe format, filtering out low-similarity results
+function transformRecipes(rows: MatchRecipeRow[]): Recipe[] {
   return rows
-    .filter(row => skipThreshold || row.similarity >= 0.2)
+    .filter(row => row.similarity >= 0.3)
     .map(row => ({
       id: row.recipe_id,
       title: row.metadata?.title || "Untitled Recipe",
@@ -188,15 +189,16 @@ function transformRecipes(rows: MatchRecipeRow[], skipThreshold = false): Recipe
     }))
 }
 
+// Non-fatal wrapper around ingredient search RPC
 async function searchByIngredients(
   supabaseAdmin: ReturnType<typeof createClient>,
-  query: string,
+  prompt: string,
   matchCount: number
 ): Promise<IngredientSearchRow[]> {
   const { data, error } = await supabaseAdmin.rpc("search_recipes_by_ingredients", {
-    search_query: query,
+    search_query: prompt,
     match_count: matchCount,
-  } as any)
+  })
   if (error) {
     console.error("[Stream] Ingredient search error:", error.message)
     return []
@@ -204,6 +206,9 @@ async function searchByIngredients(
   return data || []
 }
 
+// Merge vector search and ingredient search results using Reciprocal Rank Fusion.
+// Recipes appearing in both lists get a score boost — best of both worlds.
+// k=60 is the standard RRF constant.
 function reciprocalRankFusion(
   vectorResults: Recipe[],
   ingredientResults: IngredientSearchRow[],
@@ -238,24 +243,21 @@ function reciprocalRankFusion(
     .map(({ score: _s, ...recipe }) => recipe)
 }
 
-// Only hard dietary restrictions go into the filter.
-// Soft interest tags like "simple eating" or "avocado and greek yogurt" are skipped —
-// they describe what the user likes, not what they cannot eat.
-const RESTRICTION_KEYWORDS = [
-  "vegan", "vegetarian", "gluten", "dairy", "nut", "allerg",
-  "halal", "kosher", "lactose", "celiac", "pescatarian", "paleo", "keto",
-]
-
+// Post-retrieval dietary filter: embedding retrieval is soft and cannot enforce
+// dietary restrictions (e.g. "Chicken pasta bake" ranks highly for "pasta recipes"
+// regardless of query enrichment). This LLM filter is the only reliable approach.
 async function filterRecipesByPreferences(
   apiKey: string,
   recipes: Recipe[],
-  restrictions: string[]
+  preferences: string[]
 ): Promise<Recipe[]> {
-  if (restrictions.length === 0) return recipes
+  if (preferences.length === 0) return recipes
 
   const recipeList = recipes
     .map(r => `${r.id}: ${r.title} — ${r.caption}`)
     .join("\n")
+
+  const prefText = preferences.join(", ")
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -269,11 +271,11 @@ async function filterRecipesByPreferences(
       messages: [
         {
           role: "system",
-          content: `You are a dietary compliance checker. Given a list of recipes and a user's dietary restrictions, return ONLY the IDs of recipes that comply with ALL restrictions. Only exclude recipes that clearly violate a hard dietary rule (e.g. a vegan restriction excludes meat dishes). Return a JSON array of ID strings only, with no explanation. Example: ["123", "456"]`,
+          content: `You are a strict dietary compliance checker. Given a list of recipes and a user's dietary preferences, return ONLY the IDs of recipes that comply with ALL of the user's dietary restrictions. Be strict — if a recipe title or description suggests ingredients that violate any restriction, exclude it. Return a JSON array of ID strings only, with no explanation. Example: ["123", "456"]`,
         },
         {
           role: "user",
-          content: `User dietary restrictions: ${restrictions.join(", ")}\n\nRecipes:\n${recipeList}\n\nReturn JSON array of compliant recipe IDs:`,
+          content: `User dietary preferences: ${prefText}\n\nRecipes:\n${recipeList}\n\nReturn JSON array of compliant recipe IDs:`,
         },
       ],
     }),
@@ -281,25 +283,27 @@ async function filterRecipesByPreferences(
 
   if (!response.ok) {
     console.error("[Stream] Dietary filter API error:", await response.text())
-    return recipes
+    return recipes // fall back to unfiltered if the call fails
   }
 
   const data = await response.json()
   const content = data.choices?.[0]?.message?.content?.trim() ?? "[]"
-  console.log("[Stream] Dietary filter response:", content)
+  console.log("[Stream] Dietary filter raw LLM response:", content)
 
   try {
+    // Strip markdown fences in case the model wraps the JSON
     const clean = content.replace(/```json|```/g, "").trim()
     const ids: string[] = JSON.parse(clean).map(String)
     const filtered = recipes.filter(r => ids.includes(String(r.id)))
     console.log(`[Stream] Dietary filter: ${recipes.length} → ${filtered.length} recipes`)
-    return filtered.length > 0 ? filtered : recipes
+    return filtered.length > 0 ? filtered : recipes // fallback if filter is too aggressive
   } catch {
     console.error("[Stream] Failed to parse dietary filter response:", content)
     return recipes
   }
 }
 
+// Ask LLM for a single plain-text recommendation sentence only
 async function getChatText(
   apiKey: string,
   userPrompt: string,
@@ -312,7 +316,7 @@ async function getChatText(
     ? `\n\nUser dietary profile: ${preferences.join(", ")}.`
     : ""
   const photoContext = photoIngredientSummary
-    ? `\n\nThe user shared a photo; these ingredients were identified from it: ${photoIngredientSummary}. Recipes below were matched from those ingredients. Never say you cannot see photos — speak naturally as if you already understood what they have.`
+    ? `\n\nThe user shared a photo; these ingredients were identified from it: ${photoIngredientSummary}. Recipes below were matched from those ingredients (and their request). Never say you cannot see photos, images, or pictures — speak naturally as if you already understood what they have.`
     : ""
   const systemPrompt = `You are Hands, a cooking assistant. Write 1 short sentence (under 20 words) recommending these recipes to the user. Return ONLY the sentence, no XML, no formatting.${prefContext}${photoContext}\n\nRecipes:\n${recipeList}`
 
@@ -341,6 +345,7 @@ async function getChatText(
 }
 
 Deno.serve(async (req) => {
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
   }
@@ -353,17 +358,23 @@ Deno.serve(async (req) => {
       )
     }
 
+    // Get environment variables
     const openaiKey = Deno.env.get("OPENAI_API_KEY")
     const supabaseUrl = Deno.env.get("SUPABASE_URL")
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
 
-    if (!openaiKey) throw new Error("OPENAI_API_KEY not configured")
-    if (!supabaseUrl || !supabaseServiceKey) throw new Error("Supabase credentials not configured")
+    if (!openaiKey) {
+      throw new Error("OPENAI_API_KEY not configured")
+    }
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error("Supabase credentials not configured")
+    }
 
     const authHeader = req.headers.get("Authorization")
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
+    // Resolve authenticated user
     let userId: string | null = null
     if (authHeader && authHeader !== `Bearer ${supabaseAnonKey}`) {
       const token = authHeader.replace("Bearer ", "")
@@ -371,7 +382,11 @@ Deno.serve(async (req) => {
       if (!authError && user) {
         userId = user.id
         console.log("[Stream] Authenticated user:", userId)
+      } else {
+        console.log("[Stream] Auth failed or anonymous:", authError?.message)
       }
+    } else {
+      console.log("[Stream] No user token — running without personalization")
     }
 
     const body = (await req.json()) as RequestBody
@@ -384,75 +399,74 @@ Deno.serve(async (req) => {
       )
     }
 
-    console.log("[Stream] Running without preferences")
+    // Fetch user taste preferences for post-retrieval filtering
+    let tastePreferences: string[] = []
+    if (userId) {
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("UserTasteProfiles")
+        .select("taste_preferences")
+        .eq("id", userId)
+        .single()
+
+      if (profileError) {
+        console.log("[Stream] Profile fetch error:", profileError.message)
+      } else if (Array.isArray(profile?.taste_preferences)) {
+        tastePreferences = profile.taste_preferences
+        console.log("[Stream] Loaded taste preferences:", tastePreferences.length, "chips")
+      } else {
+        console.log("[Stream] No taste preferences found for user")
+      }
+    }
+
+    console.log("[Stream] Preferences:", tastePreferences)
 
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder()
         try {
-          const isImageQuery =
+          // Text-only: embedding + RPCs use the user prompt. With a photo: extract
+          // ingredients first (same vision task as analyze-image), then run the same
+          // vector + ingredient + RRF pipeline on "ingredients + user ask".
+          let contextualQuery = prompt
+          let photoIngredientSummary: string | undefined
+
+          const allowedVision = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+          if (
             typeof imageBase64 === "string" &&
             imageBase64.length > 0 &&
             typeof mimeType === "string" &&
-            ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(mimeType)
-
-          let embeddingQuery: string
-          let ingredientSearchQuery: string
-          let photoIngredientSummary: string | undefined
-
-          if (isImageQuery) {
+            allowedVision.includes(mimeType)
+          ) {
             try {
               const ingredients = await extractIngredientsFromPhoto(
                 openaiKey,
-                imageBase64!,
+                imageBase64,
                 mimeType as VisionMimeType,
                 prompt,
               )
-
-              // Log every detection with confidence so you can see what vision picked up
-              console.log("[Stream] Vision raw detections:")
-              ingredients.forEach(i =>
-                console.log(`  [${i.confidence.toUpperCase()}] ${i.name} (${i.category})`)
-              )
-
-              // Drop low-confidence detections — they add noise to retrieval
-              const names = ingredients
-                .filter(i => i.confidence !== "low")
-                .map(i => i.name.trim())
-                .filter(Boolean)
-
-              console.log("[Stream] Using for retrieval:", names.join(", ") || "(none — all low confidence)")
-
+              const names = ingredients.map(i => i.name.trim()).filter(Boolean)
               if (names.length > 0) {
                 photoIngredientSummary = names.join(", ")
-                embeddingQuery = names.join(" ") + " recipes"
-                ingredientSearchQuery = names.join(" ")
-              } else {
-                embeddingQuery = prompt
-                ingredientSearchQuery = prompt
+                contextualQuery = `${photoIngredientSummary}. ${prompt}`.trim()
+                console.log("[Stream] Photo ingredients (preview):", photoIngredientSummary.substring(0, 120))
               }
             } catch (visionErr) {
-              console.error("[Stream] Vision extraction failed, falling back to prompt:", visionErr)
-              embeddingQuery = prompt
-              ingredientSearchQuery = prompt
+              console.error("[Stream] Vision extraction failed, using text prompt only:", visionErr)
             }
-          } else {
-            embeddingQuery = prompt
-            ingredientSearchQuery = prompt
           }
 
-          console.log("[Stream] Embedding query:", embeddingQuery.substring(0, 150))
-          console.log("[Stream] Ingredient search query:", ingredientSearchQuery.substring(0, 150))
+          console.log("[Stream] Retrieval query:", contextualQuery.substring(0, 150))
 
-          const embedding = await generateEmbedding(embeddingQuery, openaiKey)
+          const embedding = await generateEmbedding(contextualQuery, openaiKey)
 
-          const vectorMatchCount = 15
+          // Run vector search and ingredient search in parallel — no added latency
+          const vectorMatchCount = tastePreferences.length > 0 ? 20 : 10
           const [vectorResult, ingredientRows] = await Promise.all([
             supabaseAdmin.rpc("match_recipes", {
               query_embedding: embedding,
               match_count: vectorMatchCount,
-            } as any),
-            searchByIngredients(supabaseAdmin, ingredientSearchQuery, 30),
+            }),
+            searchByIngredients(supabaseAdmin, contextualQuery, 20),
           ])
 
           if (vectorResult.error) {
@@ -460,16 +474,22 @@ Deno.serve(async (req) => {
             throw new Error(`Database error: ${vectorResult.error.message}`)
           }
 
-          const filteredVectorRecipes = transformRecipes(vectorResult.data || [], isImageQuery)
+          const filteredVectorRecipes = transformRecipes(vectorResult.data || [])
           console.log(`[Stream] Vector: ${filteredVectorRecipes.length} | Ingredient: ${ingredientRows.length}`)
 
           let recipes = reciprocalRankFusion(filteredVectorRecipes, ingredientRows)
           console.log(`[Stream] RRF merged: ${recipes.length} unique recipes`)
 
+          // Post-retrieval dietary filter — the only reliable way to enforce restrictions
+          if (tastePreferences.length > 0) {
+            recipes = await filterRecipesByPreferences(openaiKey, recipes, tastePreferences)
+          }
+
+          // Cap at 6 for display
           recipes = recipes.slice(0, 6)
 
           if (recipes.length === 0) {
-            const xml = `<answer><text>I couldn't find any recipes matching your request. Try a different search.</text><items></items></answer>`
+            const xml = `<answer><text>I couldn't find any recipes matching your request and dietary preferences. Try a different search.</text><items></items></answer>`
             controller.enqueue(encoder.encode(xml))
             controller.close()
             return
@@ -479,7 +499,7 @@ Deno.serve(async (req) => {
             openaiKey,
             prompt,
             recipes,
-            [],
+            tastePreferences,
             photoIngredientSummary,
           )
 
@@ -508,6 +528,7 @@ Deno.serve(async (req) => {
     })
   } catch (error) {
     console.error("[Stream] Edge function error:", error)
+
     return new Response(
       `<answer><text>Sorry, I encountered an error while searching for recipes. Please try again.</text><items></items></answer>`,
       {

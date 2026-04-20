@@ -19,6 +19,14 @@ export type StreamingStatus =
   | "typing"
   | "error";
 
+export type ChatSendAttachment = {
+  context?: string;
+  imageBase64?: string;
+  mimeType?: string;
+};
+
+const DEFAULT_IMAGE_CONTEXT = "What can I make with these ingredients?";
+
 interface UseRecipeChatOptions {
   timeout?: number;
   typingDelay?: number;
@@ -31,7 +39,11 @@ interface UseRecipeChatReturn {
   status: StreamingStatus;
   error: Error | null;
   isLoading: boolean;
-  sendMessage: (message: string, conversationId?: string) => Promise<void>;
+  sendMessage: (
+    message: string,
+    conversationId?: string,
+    payload?: ChatSendAttachment,
+  ) => Promise<void>;
   clearChat: () => void;
   cancelRequest: () => void;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -140,8 +152,12 @@ export function useRecipeChat(
 
   // Send message and handle streaming response
   const sendMessage = useCallback(
-    async (message: string, conversationId?: string) => {
-      if (!message.trim()) return;
+    async (
+      message: string,
+      conversationId?: string,
+      payload?: ChatSendAttachment,
+    ) => {
+      if (!message.trim() && !payload?.imageBase64) return;
 
       // Cancel any existing request
       abortControllerRef.current?.abort();
@@ -235,7 +251,27 @@ export function useRecipeChat(
           throw new Error("Supabase configuration missing");
         }
 
-        const functionUrl = `${supabaseUrl}/functions/v1/streamv4`;
+        const functionUrl = `${supabaseUrl}/functions/v1/streamv5`;
+
+        const normalizedContext = (payload?.context ?? "").trim();
+        const isImageSend = Boolean(payload?.imageBase64);
+        const promptForModel = isImageSend
+          ? normalizedContext || DEFAULT_IMAGE_CONTEXT
+          : userMessage;
+        const history = messagesRef.current
+          .filter((m) => m.role === "user")
+          .slice(-2)
+          .map((m) => m.content);
+
+        const requestBody: Record<string, unknown> = {
+          prompt: promptForModel,
+          history,
+        };
+        if (isImageSend && payload?.imageBase64) {
+          requestBody.context = normalizedContext || DEFAULT_IMAGE_CONTEXT;
+          requestBody.imageBase64 = payload.imageBase64;
+          if (payload.mimeType) requestBody.mimeType = payload.mimeType;
+        }
 
         // Make POST request to streaming endpoint
         const response = await fetch(functionUrl, {
@@ -246,10 +282,7 @@ export function useRecipeChat(
             apikey: anonKey,
             Authorization: `Bearer ${session?.access_token || anonKey}`,
           },
-          body: JSON.stringify({
-            prompt: userMessage,
-            history: historySnapshot,
-          }),
+          body: JSON.stringify(requestBody),
           signal: abortControllerRef.current.signal,
         });
 
