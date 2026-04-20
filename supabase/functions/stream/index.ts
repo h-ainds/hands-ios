@@ -384,27 +384,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    let tastePreferences: string[] = []
-    if (userId) {
-      const { data: profile, error: profileError } = await supabaseAdmin
-        .from("UserTasteProfiles")
-        .select("taste_preferences")
-        .eq("id", userId)
-        .single()
-
-      if (profileError) {
-        console.log("[Stream] Profile fetch error:", profileError.message)
-      } else if (Array.isArray(profile?.taste_preferences)) {
-        tastePreferences = profile.taste_preferences
-        console.log("[Stream] Taste preferences:", tastePreferences)
-      }
-    }
-
-    // Filter to hard dietary restrictions only — soft tags are skipped
-    const hardRestrictions = tastePreferences.filter(p =>
-      RESTRICTION_KEYWORDS.some(kw => p.toLowerCase().includes(kw))
-    )
-    console.log("[Stream] Hard restrictions:", hardRestrictions)
+    console.log("[Stream] Running without preferences")
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -466,7 +446,7 @@ Deno.serve(async (req) => {
 
           const embedding = await generateEmbedding(embeddingQuery, openaiKey)
 
-          const vectorMatchCount = hardRestrictions.length > 0 ? 25 : 15
+          const vectorMatchCount = 15
           const [vectorResult, ingredientRows] = await Promise.all([
             supabaseAdmin.rpc("match_recipes", {
               query_embedding: embedding,
@@ -486,10 +466,6 @@ Deno.serve(async (req) => {
           let recipes = reciprocalRankFusion(filteredVectorRecipes, ingredientRows)
           console.log(`[Stream] RRF merged: ${recipes.length} unique recipes`)
 
-          if (hardRestrictions.length > 0) {
-            recipes = await filterRecipesByPreferences(openaiKey, recipes, hardRestrictions)
-          }
-
           recipes = recipes.slice(0, 6)
 
           if (recipes.length === 0) {
@@ -503,7 +479,7 @@ Deno.serve(async (req) => {
             openaiKey,
             prompt,
             recipes,
-            tastePreferences,
+            [],
             photoIngredientSummary,
           )
 
