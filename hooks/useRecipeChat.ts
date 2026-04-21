@@ -244,7 +244,7 @@ export function useRecipeChat(
           throw new Error("Supabase configuration missing");
         }
 
-        const functionUrl = `${supabaseUrl}/functions/v1/streamv3`;
+        const functionUrl = `${supabaseUrl}/functions/v1/streamv5`;
 
         const normalizedContext = (payload?.context ?? "").trim();
         const isImageSend = Boolean(payload?.imageBase64);
