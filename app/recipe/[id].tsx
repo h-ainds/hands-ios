@@ -20,18 +20,72 @@ export default function RecipeDetailScreen() {
 
   const loadRecipe = async () => {
     try {
+      const routeId = Array.isArray(id) ? id[0] : id
+      const normalizedId = typeof routeId === 'string' ? Number(routeId) : Number(routeId)
+      if (!Number.isFinite(normalizedId)) {
+        console.warn(`[RecipeDetail] Invalid route id: ${String(routeId)}`)
+        setRecipe(null)
+        return
+      }
+
       const { data, error } = await supabase
         .from('recipes')
         .select('*')
-        .eq('id', id)
+        .eq('id', normalizedId)
         .single()
 
-      if (error) throw error
-      setRecipe(data)
+      if (!error && data) {
+        setRecipe(data)
+        
+        if (data?.id) {
+          await trackRecipeView(data.id)
+          console.log('Tracked view for recipe:', data.id)
+        }
+        return
+      }
+
+      // Backward-compatibility fallback:
+      // if a legacy route uses featured_library.id, resolve to recipes.id.
+      const { data: featuredRow, error: featuredError } = await supabase
+        .from('featured_library')
+        .select('recipe_id')
+        .eq('id', normalizedId)
+        .maybeSingle()
+
+      if (featuredError) {
+        console.error('[RecipeDetail] featured_library fallback failed:', featuredError)
+        throw error ?? featuredError
+      }
+
+      if (!featuredRow?.recipe_id) {
+        console.warn(`[RecipeDetail] No recipe found for route id=${routeId}`)
+        setRecipe(null)
+        return
+      }
+
+      console.warn(
+        `[RecipeDetail] Resolved legacy featured_library.id=${routeId} to recipes.id=${featuredRow.recipe_id}`
+      )
+
+      const { data: fallbackRecipe, error: fallbackRecipeError } = await supabase
+        .from('recipes')
+        .select('*')
+        .eq('id', featuredRow.recipe_id)
+        .maybeSingle()
+
+      if (fallbackRecipeError || !fallbackRecipe) {
+        if (fallbackRecipeError) {
+          console.error('[RecipeDetail] Failed loading fallback recipe:', fallbackRecipeError)
+        }
+        setRecipe(null)
+        return
+      }
+
+      setRecipe(fallbackRecipe)
       
-      if (data?.id) {
-        await trackRecipeView(data.id)
-        console.log('Tracked view for recipe:', data.id)
+      if (fallbackRecipe?.id) {
+        await trackRecipeView(fallbackRecipe.id)
+        console.log('Tracked view for recipe:', fallbackRecipe.id)
       }
     } catch (error) {
       console.error('Error loading recipe:', error)

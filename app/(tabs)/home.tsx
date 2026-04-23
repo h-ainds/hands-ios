@@ -1,4 +1,4 @@
-import { Image, Pressable, ActivityIndicator, ScrollView } from 'react-native'
+import { Image, Pressable, ActivityIndicator, ScrollView, Alert } from 'react-native'
 import { Text, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRecipes } from '@/hooks/useRecipes'
@@ -12,6 +12,7 @@ import { useAuth } from '@/context/AuthContext'
 import ChatHistorySheet from '@/components/ChatHistorySheet'
 import { SymbolView } from 'expo-symbols'
 import { useFocusEffect } from 'expo-router'
+import { useFavorites } from '@/hooks/useFavorites'
 
 export default function HomeScreen() {
   const { recipes, loading, error } = useRecipes()
@@ -23,6 +24,37 @@ export default function HomeScreen() {
   const [recentRecipes, setRecentRecipes] = useState<Recipe[]>([])
   const [recentLoading, setRecentLoading] = useState(true)
   const [isChatHistoryOpen, setIsChatHistoryOpen] = useState(false)
+  const { isFavorite, toggleFavorite, pendingRecipeIds, favoritesAvailable } = useFavorites()
+
+  const handleToggleFavorite = async (recipeId: string | number) => {
+    try {
+      const wasFavorite = isFavorite(recipeId)
+      const updated = await toggleFavorite(recipeId)
+      if (updated && !wasFavorite) Alert.alert('Added to Favorites')
+      if (!updated && !favoritesAvailable) {
+        Alert.alert('Favorites setup needed', 'Run your latest Supabase migration to enable Favorites.')
+      }
+    } catch (err) {
+      console.error('Failed to update favorite:', err)
+      Alert.alert('Could not update favorites')
+    }
+  }
+
+  const logRecentDebug = (items: any[]) => {
+    try {
+      const preview = (items || []).slice(0, 12).map((r: any) => ({
+        id: r?.id,
+        recipe_id: r?.recipe_id,
+        title: r?.title,
+        image: r?.image,
+        viewed_at: r?.viewed_at,
+        keys: r && typeof r === 'object' ? Object.keys(r).slice(0, 20) : [],
+      }))
+      console.log('[Home][Recents] Raw recents preview:', preview)
+    } catch (e) {
+      console.log('[Home][Recents] Failed to log recents debug')
+    }
+  }
 
   // Fetch random recipes for hero and our picks
   useEffect(() => {
@@ -72,16 +104,51 @@ export default function HomeScreen() {
         return
       }
 
-      console.log('Recent recipes loaded:', recent?.length || 0)
-      if (recent && recent.length > 0) {
-        console.log('Recent recipes data:', recent?.slice(0, 3).map((r: any) => ({ 
-          id: r.id, 
-          title: r.title?.substring(0, 30) + '...', 
-          viewed_at: r.viewed_at 
-        })))
+      const recentList = Array.isArray(recent) ? recent : []
+      console.log('Recent recipes loaded:', recentList.length)
+      logRecentDebug(recentList)
+
+      // Strict sanitization:
+      // 1) keep only rows with a plausible numeric recipes.id
+      // 2) rehydrate from recipes table (source of truth) to ensure backing rows exist
+      const orderedIds = recentList
+        .map((r: any) => (r?.id != null ? Number(r.id) : NaN))
+        .filter((id: number) => Number.isFinite(id) && id > 0)
+
+      if (orderedIds.length === 0) {
+        console.warn('[Home][Recents] No valid recent recipe IDs returned from RPC.')
+        setRecentRecipes([])
+        return
       }
-      
-      setRecentRecipes(recent as Recipe[] || [])
+
+      const uniqueIds = Array.from(new Set(orderedIds))
+      const { data: recipeRows, error: recipeError } = await supabase
+        .from('recipes')
+        .select('id,title,image,caption,steps,tags,created_at,updated_at,searchable_title,url,ingredients')
+        .in('id', uniqueIds)
+
+      if (recipeError) {
+        console.error('[Home][Recents] Failed to rehydrate recents from recipes:', recipeError)
+        // Fail closed: don't render potentially orphaned/blank cards.
+        setRecentRecipes([])
+        return
+      }
+
+      const byId = new Map<number, Recipe>()
+      ;(recipeRows as Recipe[] | null | undefined)?.forEach((row) => {
+        if (row?.id != null) byId.set(Number(row.id), row)
+      })
+
+      const hydratedOrdered = orderedIds
+        .map((id) => byId.get(id))
+        .filter((r): r is Recipe => Boolean(r && r.id && r.title))
+
+      const droppedCount = orderedIds.length - hydratedOrdered.length
+      if (droppedCount > 0) {
+        console.warn(`[Home][Recents] Dropped ${droppedCount} orphan/blank recent item(s) before render.`)
+      }
+
+      setRecentRecipes(hydratedOrdered.slice(0, 9))
     } catch (error) {
       console.error('Error in loadRecentRecipes:', error)
     } finally {
@@ -202,7 +269,7 @@ export default function HomeScreen() {
         {/* Recent Recipes Section */}
         <View className="py-5">
           <Text className="text-2xl font-bold tracking-tighter mb-2 px-4">
-            Recents
+            Recent Recipes
           </Text>
           {recentLoading ? (
             <View className="px-4 py-8">
@@ -218,10 +285,15 @@ export default function HomeScreen() {
                 recentRecipes.slice(0, 10).map((recipe: Recipe) => (
                   <View key={recipe.id}>
                     <RecipeCard
+                      recipeId={recipe.id}
                       title={recipe.title}
                       image={recipe.image ?? undefined}
                       cardType="vertical"
                       rounded="xl"
+                      showActionButton
+                      isFavorited={isFavorite(recipe.id)}
+                      favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
+                      onToggleFavorite={handleToggleFavorite}
                       onPress={() => router.push(`/recipe/${recipe.id}`)}/>
                   </View>
                 ))
@@ -253,10 +325,15 @@ export default function HomeScreen() {
                 ourPicks.map((recipe: Recipe) => (
                   <View key={recipe.id}>
                     <RecipeCard
+                      recipeId={recipe.id}
                       title={recipe.title}
                       image={recipe.image ?? undefined}
                       cardType="vertical"
                       rounded="xl"
+                      showActionButton
+                      isFavorited={isFavorite(recipe.id)}
+                      favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
+                      onToggleFavorite={handleToggleFavorite}
                       onPress={() => router.push(`/recipe/${recipe.id}`)}/>
                   </View>
                 ))

@@ -87,7 +87,7 @@ export default function ChatView({
                         keyExtractor={item => item.id}
                         renderItem={({ item }) => (
                           <RecipeCard
-                            id={item.id}
+                            recipeId={item.id}
                             title={item.title}
                             image={item.image}
                             cardType="vertical"

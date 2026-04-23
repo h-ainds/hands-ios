@@ -119,6 +119,15 @@ export default function ProfileScreen() {
           <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
         </Pressable>
 
+        <Pressable
+          onPress={() => router.push('/favorites')}
+          className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
+        >
+          <SymbolView name="heart.fill" size={20} tintColor="#000" />
+          <Text className="text-black ml-3 text-xl font-bold flex-1">Favorites</Text>
+          <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
+        </Pressable>
+
         {/* Logout Button */}
         <Pressable
           onPress={handleLogout}

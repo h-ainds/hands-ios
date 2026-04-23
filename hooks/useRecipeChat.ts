@@ -53,6 +53,50 @@ interface UseRecipeChatReturn {
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
 const DEFAULT_TYPING_DELAY = 6;
 
+async function filterExistingRecipeItems(
+  items: ParsedAnswer["items"],
+): Promise<ParsedAnswer["items"]> {
+  if (!items || items.length === 0) return [];
+
+  const normalizedIds = Array.from(
+    new Set(
+      items
+        .map((item) => String(item?.id ?? "").trim())
+        .filter((id) => id.length > 0),
+    ),
+  );
+
+  if (normalizedIds.length === 0) return [];
+
+  const numericIds = normalizedIds
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id));
+
+  if (numericIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("recipes")
+    .select("id")
+    .in("id", numericIds);
+
+  if (error) {
+    console.error("[useRecipeChat] Failed to validate recipe IDs:", error);
+    return [];
+  }
+
+  const validIds = new Set((data || []).map((row) => String(row.id)));
+  const validItems = items.filter((item) => validIds.has(String(item.id)));
+
+  const droppedCount = items.length - validItems.length;
+  if (droppedCount > 0) {
+    console.warn(
+      `[useRecipeChat] Dropped ${droppedCount} invalid recipe card(s) before render/save.`,
+    );
+  }
+
+  return validItems;
+}
+
 export function useRecipeChat(
   options: UseRecipeChatOptions = {},
 ): UseRecipeChatReturn {
@@ -131,7 +175,10 @@ export function useRecipeChat(
         const newMessage: any = { role, content };
 
         if (recipes && recipes.items.length > 0) {
-          newMessage.recipes = recipes.items;
+          const validItems = await filterExistingRecipeItems(recipes.items);
+          if (validItems.length > 0) {
+            newMessage.recipes = validItems;
+          }
         }
 
         const newContent = [...currentContent, newMessage];
@@ -350,17 +397,25 @@ export function useRecipeChat(
         await typeAssistantText(displayText);
 
         // Add recipe cards if items were parsed
-        if (parsed?.items && parsed.items.length > 0 && isMountedRef.current) {
+        let validatedParsed: ParsedAnswer | null = null;
+        if (parsed?.items && parsed.items.length > 0) {
+          const validItems = await filterExistingRecipeItems(parsed.items);
+          if (validItems.length > 0) {
+            validatedParsed = { ...parsed, items: validItems };
+          }
+        }
+
+        if (validatedParsed?.items && validatedParsed.items.length > 0 && isMountedRef.current) {
           console.log(
             "[useRecipeChat] Adding recipe cards:",
-            parsed.items.length,
+            validatedParsed.items.length,
             "items",
           );
           setRecipeCards((prev) => [
             ...prev,
             {
               messageIndex: assistantMessageIndex,
-              recipes: parsed,
+              recipes: validatedParsed,
             },
           ]);
         }
@@ -371,7 +426,7 @@ export function useRecipeChat(
             activeConversationId,
             "assistant",
             displayText,
-            parsed || undefined,
+            validatedParsed || undefined,
           );
         }
 
