@@ -3,7 +3,7 @@ import Purchases, { CustomerInfo, LOG_LEVEL } from 'react-native-purchases'
 import { useAuth } from './AuthContext'
 
 const RC_API_KEY = 'test_BvvGkHsKyVkKgZwMfdrJWtGircq'
-const ENTITLEMENT_ID = 'pro'
+const ENTITLEMENT_ID = 'Hands+'
 
 interface SubscriptionContextType {
   isPro: boolean
