@@ -20,21 +20,26 @@ export default function RecipeDetailScreen() {
 
   const loadRecipe = async () => {
     try {
+      // Exclude generated tsvector column (ingredient_tsv) — not part of Recipe type
+      // and can cause PostgREST serialization errors on certain rows
       const { data, error } = await supabase
         .from('recipes')
-        .select('*')
+        .select('id, title, image, caption, steps, tags, created_at, updated_at, searchable_title, user_id, url, ingredients')
         .eq('id', id)
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('Error loading recipe — code:', error.code, 'message:', error.message, 'details:', error.details)
+        throw error
+      }
       setRecipe(data)
-      
+
       if (data?.id) {
-        await trackRecipeView(data.id)
+        await trackRecipeView(String(data.id))
         console.log('Tracked view for recipe:', data.id)
       }
     } catch (error) {
-      console.error('Error loading recipe:', error)
+      console.error('Error loading recipe:', error instanceof Error ? error.message : JSON.stringify(error))
     } finally {
       setLoading(false)
     }
