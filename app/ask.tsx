@@ -317,9 +317,9 @@ export default function AskScreen() {
           {/* Streaming status hint */}
           {isLoading && (
             <View className="items-center mt-1.5">
-              <Text style={{ fontSize: 12, color: '#AFAFAF' }}>
+              <Text style={{ fontSize: 14, color: '#F7F7F7' }}>
                 {status === 'connecting' || status === 'streaming'
-                  ? 'Getting recipes...'
+                  ? 'Finding recipes...'
                   : 'Typing...'}
               </Text>
             </View>
