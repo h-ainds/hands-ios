@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import Purchases, { CustomerInfo, LOG_LEVEL } from 'react-native-purchases'
 import { useAuth } from './AuthContext'
 
-const RC_API_KEY = 'test_BvvGkHsKyVkKgZwMfdrJWtGircq'
+const RC_API_KEY = 'appl_DLAJSWgBPoxVcwbMfSvcYIqTLgY'
 const ENTITLEMENT_ID = 'Hands+'
 
 interface SubscriptionContextType {
