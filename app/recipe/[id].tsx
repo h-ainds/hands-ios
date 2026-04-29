@@ -13,6 +13,7 @@ export default function RecipeDetailScreen() {
   const [recipe, setRecipe] = useState<Recipe | null>(null)
   const [loading, setLoading] = useState(true)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isFavorited, setIsFavorited] = useState(false)
 
   useEffect(() => {
     loadRecipe()
@@ -30,7 +31,7 @@ export default function RecipeDetailScreen() {
 
       const { data, error } = await supabase
         .from('recipes')
-        .select('*')
+        .select('id, title, image, caption, steps, tags, created_at, updated_at, searchable_title, user_id, url, ingredients')
         .eq('id', normalizedId)
         .single()
 
@@ -88,7 +89,7 @@ export default function RecipeDetailScreen() {
         console.log('Tracked view for recipe:', fallbackRecipe.id)
       }
     } catch (error) {
-      console.error('Error loading recipe:', error)
+      console.error('Error loading recipe:', error instanceof Error ? error.message : JSON.stringify(error))
     } finally {
       setLoading(false)
     }
@@ -133,6 +134,18 @@ export default function RecipeDetailScreen() {
     <ScrollView className="flex-1 bg-white">
       {/* Back Button */}
       <BackButton />
+      <Pressable
+        onPress={() => setIsFavorited((prev) => !prev)}
+        className="absolute top-[56px] right-4 z-40 bg-white rounded-full w-9 h-9 items-center justify-center shadow-md"
+      >
+        <View className="w-6 h-6 items-center justify-center">
+          {isFavorited ? (
+            <SymbolView name="checkmark" size={16} weight="bold" tintColor="#16a34a" />
+          ) : (
+            <SymbolView name="plus" size={16} weight="bold" tintColor="#111827" />
+          )}
+        </View>
+      </Pressable>
       
       {recipe.image && (
         <Image source={{ uri: recipe.image }} className="w-full h-[300px] bg-gray-300" />

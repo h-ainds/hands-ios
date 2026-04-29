@@ -213,6 +213,13 @@ export function useRecipeChat(
       const userMessage = message.trim();
       let activeConversationId = conversationId || currentConversationId;
 
+      // Capture history BEFORE setMessages — once setMessages fires and the effect
+      // runs, messagesRef will include the new user message, making findLast() in the
+      // edge function return the current prompt instead of the previous one.
+      const historySnapshot = messagesRef.current
+        .slice(-6)
+        .map((m) => ({ role: m.role, content: m.content }));
+
       // Add user message and update status
       if (isMountedRef.current) {
         setMessages((prev) => [

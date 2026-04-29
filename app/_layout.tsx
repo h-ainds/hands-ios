@@ -2,6 +2,7 @@ import "./global.css"
 import { useEffect } from 'react'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
+import { SubscriptionProvider } from '@/context/SubscriptionContext'
 import { View, ActivityIndicator } from 'react-native'
 
 // Routes that don't require authentication
@@ -63,7 +64,9 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <SubscriptionProvider>
+        <RootLayoutNav />
+      </SubscriptionProvider>
     </AuthProvider>
   )
 }
