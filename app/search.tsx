@@ -33,7 +33,6 @@ export default function SearchScreen() {
     try {
       const wasFavorite = isFavorite(recipeId)
       const updated = await toggleFavorite(recipeId)
-      if (updated && !wasFavorite) Alert.alert('Added to Favorites')
       if (!updated && !favoritesAvailable) {
         Alert.alert('Favorites setup needed', 'Run your latest Supabase migration to enable Favorites.')
       }

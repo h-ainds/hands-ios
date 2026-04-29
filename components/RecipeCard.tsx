@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { View, Text, Image, Pressable } from 'react-native'
+import React, { useState, useEffect, useRef } from 'react'
+import { View, Text, Image, Pressable, Modal, Animated, Easing } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { trackRecipeCardTap } from '@/lib/supabase/track'
@@ -44,9 +44,13 @@ export default function RecipeCard({
 }: RecipeCardProps) {
   const router = useRouter()
   const [isAdded, setIsAdded] = useState(false)
+  const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [isSheetMounted, setIsSheetMounted] = useState(false)
   const [imageError, setImageError] = useState(false)
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined)
   const [dbFetched, setDbFetched] = useState(false)
+  const spinAnim = useRef(new Animated.Value(0)).current
+  const sheetAnim = useRef(new Animated.Value(0)).current
 
   const normalizedRecipeId =
     typeof recipeId === 'string' && !isNaN(Number(recipeId)) ? Number(recipeId) : recipeId
@@ -163,12 +167,46 @@ export default function RecipeCard({
   const handleActionPress = () => {
     if (favoriteLoading) return
 
+    spinAnim.setValue(0)
+    Animated.sequence([
+      Animated.timing(spinAnim, {
+        toValue: 1,
+        duration: 150,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(spinAnim, {
+        toValue: 0,
+        duration: 140,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start()
+    setIsSheetMounted(true)
+    setIsSheetOpen(true)
+  }
+
+  const handleAddToFavorites = () => {
     if (onToggleFavorite && hasValidRecipeId) {
       onToggleFavorite(normalizedRecipeId as string | number)
+      closeSheet()
       return
     }
 
     setIsAdded((prev) => !prev)
+    closeSheet()
+  }
+
+  const closeSheet = () => {
+    Animated.timing(sheetAnim, {
+      toValue: 0,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      setIsSheetMounted(false)
+      setIsSheetOpen(false)
+    })
   }
 
   const handleCardPress = async () => {
@@ -201,6 +239,29 @@ export default function RecipeCard({
       ? require('../assets/placeholder.png')
       : { uri: imageUrl }
   const showAddedState = isFavorited ?? isAdded
+  const spin = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '50deg'],
+  })
+  const backdropOpacity = sheetAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  })
+  const sheetTranslateY = sheetAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [280, 0],
+  })
+
+  useEffect(() => {
+    if (!isSheetOpen) return
+    sheetAnim.setValue(0)
+    Animated.timing(sheetAnim, {
+      toValue: 1,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start()
+  }, [isSheetOpen, sheetAnim])
 
   return (
     <Pressable
@@ -245,11 +306,53 @@ export default function RecipeCard({
             cardType === 'square' ? 'bottom-4' : 'top-3'
           } right-3 bg-white rounded-full p-1.5 shadow-md ${favoriteLoading ? 'opacity-70' : ''}`}
         >
-          <View className="w-6 h-6 items-center justify-center">
+          <Animated.View
+            className="w-6 h-6 items-center justify-center"
+            style={{ transform: [{ rotate: spin }] }}
+          >
             {showAddedState ? <CheckIcon /> : <PlusIcon />}
-          </View>
+          </Animated.View>
         </Pressable>
       )}
+
+      <Modal
+        visible={isSheetMounted}
+        transparent
+        animationType="none"
+        onRequestClose={closeSheet}
+      >
+        <View className="flex-1 justify-end">
+          <Animated.View
+            className="absolute inset-0 bg-black/30"
+            style={{ opacity: backdropOpacity }}
+          />
+          <Pressable className="absolute inset-0" onPress={closeSheet} />
+          <Animated.View
+            className="bg-white rounded-t-3xl px-4 pt-3 pb-8"
+            style={{ transform: [{ translateY: sheetTranslateY }] }}
+          >
+            <View className="w-12 h-1.5 bg-gray-300 rounded-full self-center mb-4" />
+
+            <Pressable
+              className="py-4 px-2"
+              onPress={handleAddToFavorites}
+            >
+              <Text className="text-lg font-semibold text-black">
+                Add to Favorites
+              </Text>
+            </Pressable>
+
+            <Pressable
+              className="py-4 px-2 border-t border-gray-100"
+              onPress={closeSheet}
+            >
+              <Text className="text-lg font-semibold text-black">
+                Reply
+              </Text>
+            </Pressable>
+          </Animated.View>
+        </View>
+      </Modal>
     </Pressable>
   )
 }
