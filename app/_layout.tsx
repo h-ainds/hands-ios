@@ -52,6 +52,7 @@ function RootLayoutNav() {
       <Stack.Screen name="ask" options={{ headerShown: false }} />
       <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
       <Stack.Screen name="search" options={{ headerShown: false }} />
+      <Stack.Screen name="favorites" options={{ headerShown: false }} />
       <Stack.Screen name="verify-email" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding-profile" options={{ headerShown: false }} />
       <Stack.Screen name="memory" options={{ headerShown: false }} />

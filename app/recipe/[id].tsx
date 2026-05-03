@@ -1,8 +1,8 @@
-import { ScrollView, Image, Pressable, ActivityIndicator, Linking } from 'react-native'
+import { ScrollView, Image, Pressable, ActivityIndicator, Linking, Modal, Animated, Easing } from 'react-native'
 import { SymbolView } from 'expo-symbols'
 import { Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import type { Recipe } from '@/types'
 import BackButton from '@/components/BackButton'
@@ -13,6 +13,11 @@ export default function RecipeDetailScreen() {
   const [recipe, setRecipe] = useState<Recipe | null>(null)
   const [loading, setLoading] = useState(true)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isFavorited, setIsFavorited] = useState(false)
+  const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [isSheetMounted, setIsSheetMounted] = useState(false)
+  const spinAnim = useRef(new Animated.Value(0)).current
+  const sheetAnim = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
     loadRecipe()
@@ -20,23 +25,72 @@ export default function RecipeDetailScreen() {
 
   const loadRecipe = async () => {
     try {
-      // Exclude generated tsvector column (ingredient_tsv) — not part of Recipe type
-      // and can cause PostgREST serialization errors on certain rows
+      const routeId = Array.isArray(id) ? id[0] : id
+      const normalizedId = typeof routeId === 'string' ? Number(routeId) : Number(routeId)
+      if (!Number.isFinite(normalizedId)) {
+        console.warn(`[RecipeDetail] Invalid route id: ${String(routeId)}`)
+        setRecipe(null)
+        return
+      }
+
       const { data, error } = await supabase
         .from('recipes')
         .select('id, title, image, caption, steps, tags, created_at, updated_at, searchable_title, user_id, url, ingredients')
-        .eq('id', id)
+        .eq('id', normalizedId)
         .single()
 
-      if (error) {
-        console.error('Error loading recipe — code:', error.code, 'message:', error.message, 'details:', error.details)
-        throw error
+      if (!error && data) {
+        setRecipe(data)
+        
+        if (data?.id) {
+          await trackRecipeView(data.id)
+          console.log('Tracked view for recipe:', data.id)
+        }
+        return
       }
-      setRecipe(data)
 
-      if (data?.id) {
-        await trackRecipeView(String(data.id))
-        console.log('Tracked view for recipe:', data.id)
+      // Backward-compatibility fallback:
+      // if a legacy route uses featured_library.id, resolve to recipes.id.
+      const { data: featuredRow, error: featuredError } = await supabase
+        .from('featured_library')
+        .select('recipe_id')
+        .eq('id', normalizedId)
+        .maybeSingle()
+
+      if (featuredError) {
+        console.error('[RecipeDetail] featured_library fallback failed:', featuredError)
+        throw error ?? featuredError
+      }
+
+      if (!featuredRow?.recipe_id) {
+        console.warn(`[RecipeDetail] No recipe found for route id=${routeId}`)
+        setRecipe(null)
+        return
+      }
+
+      console.warn(
+        `[RecipeDetail] Resolved legacy featured_library.id=${routeId} to recipes.id=${featuredRow.recipe_id}`
+      )
+
+      const { data: fallbackRecipe, error: fallbackRecipeError } = await supabase
+        .from('recipes')
+        .select('*')
+        .eq('id', featuredRow.recipe_id)
+        .maybeSingle()
+
+      if (fallbackRecipeError || !fallbackRecipe) {
+        if (fallbackRecipeError) {
+          console.error('[RecipeDetail] Failed loading fallback recipe:', fallbackRecipeError)
+        }
+        setRecipe(null)
+        return
+      }
+
+      setRecipe(fallbackRecipe)
+      
+      if (fallbackRecipe?.id) {
+        await trackRecipeView(fallbackRecipe.id)
+        console.log('Tracked view for recipe:', fallbackRecipe.id)
       }
     } catch (error) {
       console.error('Error loading recipe:', error instanceof Error ? error.message : JSON.stringify(error))
@@ -44,6 +98,17 @@ export default function RecipeDetailScreen() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!isSheetOpen) return
+    sheetAnim.setValue(0)
+    Animated.timing(sheetAnim, {
+      toValue: 1,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start()
+  }, [isSheetOpen, sheetAnim])
 
   if (loading) {
     return (
@@ -79,11 +144,73 @@ export default function RecipeDetailScreen() {
 
   const ingredientsGrouped = parseIngredients(recipe.ingredients as IngredientsMap)
   const hasIngredients = Object.values(ingredientsGrouped).some(arr => arr?.length > 0)
+  const spin = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '50deg'],
+  })
+  const backdropOpacity = sheetAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  })
+  const sheetTranslateY = sheetAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [280, 0],
+  })
+
+  const openSheet = () => {
+    spinAnim.setValue(0)
+    Animated.sequence([
+      Animated.timing(spinAnim, {
+        toValue: 1,
+        duration: 150,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(spinAnim, {
+        toValue: 0,
+        duration: 140,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start()
+
+    setIsSheetMounted(true)
+    setIsSheetOpen(true)
+  }
+
+  const closeSheet = () => {
+    Animated.timing(sheetAnim, {
+      toValue: 0,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      setIsSheetMounted(false)
+      setIsSheetOpen(false)
+    })
+  }
+
+  const handleAddToFavorites = () => {
+    setIsFavorited((prev) => !prev)
+    closeSheet()
+  }
 
   return (
     <ScrollView className="flex-1 bg-white">
       {/* Back Button */}
       <BackButton />
+      <Pressable
+        onPress={openSheet}
+        className="absolute top-[56px] right-4 z-40 bg-white rounded-full w-9 h-9 items-center justify-center shadow-md"
+      >
+        <Animated.View className="w-6 h-6 items-center justify-center" style={{ transform: [{ rotate: spin }] }}>
+          {isFavorited ? (
+            <SymbolView name="checkmark" size={16} weight="bold" tintColor="#16a34a" />
+          ) : (
+            <SymbolView name="plus" size={16} weight="bold" tintColor="#111827" />
+          )}
+        </Animated.View>
+      </Pressable>
       
       {recipe.image && (
         <Image source={{ uri: recipe.image }} className="w-full h-[300px] bg-gray-300" />
@@ -187,6 +314,32 @@ onPress={() => recipe.url && Linking.openURL(recipe.url)}
   </View>
 )}
  </View>
+
+      <Modal
+        visible={isSheetMounted}
+        transparent
+        animationType="none"
+        onRequestClose={closeSheet}
+      >
+        <View className="flex-1 justify-end">
+          <Animated.View className="absolute inset-0 bg-black/30" style={{ opacity: backdropOpacity }} />
+          <Pressable className="absolute inset-0" onPress={closeSheet} />
+          <Animated.View
+            className="bg-white rounded-t-3xl px-4 pt-3 pb-8"
+            style={{ transform: [{ translateY: sheetTranslateY }] }}
+          >
+            <View className="w-12 h-1.5 bg-gray-300 rounded-full self-center mb-4" />
+
+            <Pressable className="py-4 px-2" onPress={handleAddToFavorites}>
+              <Text className="text-lg font-semibold text-black">Add to Favorites</Text>
+            </Pressable>
+
+            <Pressable className="py-4 px-2 border-t border-gray-100" onPress={closeSheet}>
+              <Text className="text-lg font-semibold text-black">Reply</Text>
+            </Pressable>
+          </Animated.View>
+        </View>
+      </Modal>
 </ScrollView>
 )
 }

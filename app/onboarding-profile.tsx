@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   View,
   Text,
@@ -41,8 +41,116 @@ function generateUsername(email?: string, firstName?: string) {
 export default function OnboardingProfileScreen() {
   const router = useRouter()
 
-  // UI states
-  const [selectedTaste, setSelectedTaste] = useState('')
+  type QuestionKey =
+    | 'cooking_effort'
+    | 'dietary_preferences'
+    | 'cuisines'
+    | 'cooking_for'
+    | 'meal_type'
+    | 'pantry_situation'
+
+  type Question = {
+    key: QuestionKey
+    title: string
+    options: string[]
+    multi: boolean
+    showNumbers?: boolean
+  }
+
+  const questions: Question[] = [
+    {
+      key: 'cooking_effort',
+      title: 'What kind of cooking are you up for?',
+      options: [
+        'Quick & easy (under 30 min)',
+        'Moderate effort (30-60 min)',
+        'I enjoy longer projects',
+        'It varies',
+        'Something else ...',
+      ],
+      multi: false,
+    },
+    {
+      key: 'dietary_preferences',
+      title: 'Any dietary needs or preferences?',
+      options: [
+        'Vegetarian / vegan',
+        'Gluten-free',
+        'Low-carb / keto',
+        'No restrictions',
+        'Something else ...',
+      ],
+      multi: false,
+    },
+    {
+      key: 'cuisines',
+      title: 'What cuisines do you enjoy most?',
+      options: [
+        'Asian (Thai, Japanese, Chinese...)',
+        'Mediterranean / Middle Eastern',
+        'American / comfort food',
+        'Latin / Mexican',
+        'Something else ...',
+      ],
+      multi: true,
+    },
+    {
+      key: 'cooking_for',
+      title: 'Who are you usually cooking for?',
+      options: [
+        'Just myself',
+        'Me + one other',
+        'Family / group (4+)',
+        'It varies',
+        'Something else ...',
+      ],
+      multi: false,
+      showNumbers: true,
+    },
+    {
+      key: 'meal_type',
+      title: 'What kind of meal do you need most?',
+      options: [
+        'Weeknight dinners',
+        'Meal prep / batch cooking',
+        'Impressive dinner party dishes',
+        'All of the above',
+        'Something else ...',
+      ],
+      multi: false,
+      showNumbers: true,
+    },
+    {
+      key: 'pantry_situation',
+      title: "What's your fridge/pantry situation usually like?",
+      options: [
+        'Well-stocked with staples',
+        'I prefer recipes with few ingredients',
+        'I shop fresh for each meal',
+        'I rely a lot on canned/frozen',
+        'Something else ...',
+      ],
+      multi: true,
+    },
+  ]
+
+  const [currentStep, setCurrentStep] = useState(0)
+  const [answers, setAnswers] = useState<Record<QuestionKey, string[]>>({
+    cooking_effort: [],
+    dietary_preferences: [],
+    cuisines: [],
+    cooking_for: [],
+    meal_type: [],
+    pantry_situation: [],
+  })
+  const [otherText, setOtherText] = useState<Record<QuestionKey, string>>({
+    cooking_effort: '',
+    dietary_preferences: '',
+    cuisines: '',
+    cooking_for: '',
+    meal_type: '',
+    pantry_situation: '',
+  })
   const [submitting, setSubmitting] = useState(false)
   const [generatedChips, setGeneratedChips] = useState<string[]>([])
   const [showSuccessStep, setShowSuccessStep] = useState(false)
@@ -93,8 +201,19 @@ export default function OnboardingProfileScreen() {
       return
     }
 
-    if (!selectedTaste.trim()) {
-      Alert.alert('Error', 'Please tell us about your taste preferences')
+    const tasteText = questions
+      .map((question) => {
+        const selected = answers[question.key]
+          .filter((option) => option !== 'Something else ...')
+          .join(', ')
+        const other = otherText[question.key].trim()
+        const value = [selected, other].filter(Boolean).join(selected && other ? ', ' : '')
+        return `${question.title} ${value || 'Not specified'}`
+      })
+      .join('\n')
+
+    if (!tasteText.trim()) {
+      Alert.alert('Error', 'Please answer at least one onboarding question')
       return
     }
 
@@ -113,11 +232,11 @@ export default function OnboardingProfileScreen() {
       })
 
       console.log('[Onboarding] Creating taste vectors and preferences')
-      const { vectors, preferences } = await createTasteVectors(selectedTaste)
+      const { vectors, preferences } = await createTasteVectors(tasteText)
       setGeneratedChips(preferences)
 
       console.log('[Onboarding] Creating taste profile')
-      await createTasteProfile(user.id, selectedTaste, vectors, preferences)
+      await createTasteProfile(user.id, tasteText, vectors, preferences)
 
       setShowSuccessStep(true)
     } catch (err: any) {
@@ -128,20 +247,52 @@ export default function OnboardingProfileScreen() {
     }
   }
 
-  const exampleTastes = [
-    'I eat anything and everything except celery',
-    'My favorite food is pizza, extra pineapple',
-    "My kids love asian food, my daughter's vegetarian",
-    "I don't like Irish stew and I'm not crazy about cod",
-    'I really love a tuna melt',
-    "I don't eat octopus 'cause they're super smart",
-    'I love soup. Chicken tortilla soup.',
-    'Love thai food, like noodle dishes like ramen',
-    "I don't like dill. I can't stand dill",
-    'big arugula salad, and I love it on top of pizza',
-    'I do love lemon chicken with vegetables',
-    "Couldn't live without sushi",
-  ]
+  const question = questions[currentStep]
+  const selectedForStep = answers[question.key]
+  const otherForStep = otherText[question.key]
+  const isOtherSelected = selectedForStep.includes('Something else ...')
+
+  const progressValue = useMemo(
+    () => ((currentStep + 1) / questions.length) * 100,
+    [currentStep, questions.length]
+  )
+
+  const isCurrentStepValid = useMemo(() => {
+    const hasSelection = selectedForStep.length > 0
+    if (!hasSelection) return false
+    if (isOtherSelected && !otherForStep.trim()) return false
+    return true
+  }, [selectedForStep, isOtherSelected, otherForStep])
+
+  const toggleOption = (option: string) => {
+    setAnswers((prev) => {
+      const current = prev[question.key]
+      if (question.multi) {
+        const next = current.includes(option)
+          ? current.filter((item) => item !== option)
+          : [...current, option]
+        return { ...prev, [question.key]: next }
+      }
+      return { ...prev, [question.key]: [option] }
+    })
+  }
+
+  const handleContinue = () => {
+    if (!isCurrentStepValid) return
+    if (currentStep === questions.length - 1) {
+      handleCompleteOnboarding()
+      return
+    }
+    setCurrentStep((prev) => prev + 1)
+  }
+
+  const handleBack = () => {
+    if (currentStep > 0) {
+      setCurrentStep((prev) => prev - 1)
+      return
+    }
+    router.back()
+  }
 
   // Success step: show chips (if any) and a Continue button before redirecting
   if (showSuccessStep) {
@@ -187,104 +338,93 @@ export default function OnboardingProfileScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
-        <ScrollView
-          className="flex-1 px-6 pt-20"
-          contentContainerStyle={{ paddingBottom: 16 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Header */}
-          <View className="mt-0">
-            <Text className="text-3xl font-extrabold tracking-tighter leading-none text-black">
-              What should we know about you?
-            </Text>
-            <Text className="text-base tracking-tighter text-secondary-placeholder mt-2">
-              For best results, tell us what your favorite meals are and what you don't like.
-            </Text>
+        <View className="flex-1 px-5 pt-6">
+          <View className="flex-row items-center gap-4">
+            <TouchableOpacity
+              onPress={handleBack}
+              className="w-12 h-12 rounded-full bg-[#F3F3F3] items-center justify-center"
+            >
+              <SymbolView name="chevron.left" size={20} tintColor="#000000" />
+            </TouchableOpacity>
+            <View className="flex-1 h-4 bg-[#D9D9D9] rounded-full overflow-hidden">
+              <View
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${progressValue}%` }}
+              />
+            </View>
           </View>
 
-          {/* Input */}
-          <TextInput
-            value={selectedTaste}
-            onChangeText={setSelectedTaste}
-            placeholder="I love spicy food, prefer vegetarian options..."
-            placeholderTextColor="#00000040"
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-            editable={!submitting}
-            className="w-full h-14 p-4 rounded-full bg-[#F7F7F7] text-base text-black mt-8"
-          />
+          <View className="flex-1 pt-6">
+            <Text className="text-[26px] font-extrabold tracking-tight leading-[32px] text-black">
+              {question.title}
+            </Text>
 
-          {/* Submit Button */}
-          <TouchableOpacity
-            onPress={handleCompleteOnboarding}
-            disabled={!selectedTaste.trim() || submitting}
-            className="w-full px-6 py-3.5 rounded-full mt-6 flex-row items-center justify-center"
-            style={{
-              backgroundColor: selectedTaste.trim() ? '#6CD401' : '#F7F7F7',
-              opacity: submitting ? 0.5 : 1,
-            }}
-          >
-            {submitting ? (
-              <View className="flex-row items-center">
-                <ActivityIndicator color="white" size="small" />
-                <Text className="text-white text-lg font-medium ml-2">
-                  Setting up your profile...
-                </Text>
-              </View>
-            ) : (
-              <Text
-                className="text-lg font-medium"
-                style={{ color: selectedTaste.trim() ? 'white' : '#374151' }}
-              >
-                Complete
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          {/* Generated taste preference chips (after NLP) */}
-          {generatedChips.length > 0 && (
-            <View className="mt-6">
-              <Text className="text-sm text-black/60 mb-2">Your preferences</Text>
-              <View className="flex-row flex-wrap gap-2">
-                {generatedChips.map((label, index) => (
-                  <View
-                    key={`${index}-${label}`}
-                    className="bg-[#E8F5E0] rounded-full px-4 py-2"
+            <View className="mt-7 gap-3">
+              {question.options.map((option, index) => {
+                const selected = selectedForStep.includes(option)
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    onPress={() => toggleOption(option)}
+                    className="flex-row items-center"
+                    activeOpacity={0.8}
                   >
-                    <Text className="text-base text-black/90">{label}</Text>
-                  </View>
-                ))}
-              </View>
+                    {question.showNumbers ? (
+                      <View className="w-9 h-9 rounded-full bg-[#EFEFEF] items-center justify-center mr-3">
+                        <Text className={`text-[18px] ${selected ? 'text-primary' : 'text-black'}`}>
+                          {index + 1}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View className="w-9 h-9 rounded-full bg-[#EFEFEF] items-center justify-center mr-3">
+                        {selected ? (
+                          <SymbolView name="checkmark" size={16} tintColor="#6CD401" />
+                        ) : null}
+                      </View>
+                    )}
+                    <Text className={`text-[19px] leading-[26px] flex-1 ${option === 'Something else ...' ? 'text-gray-400' : 'text-black'}`}>
+                      {option}
+                    </Text>
+                  </TouchableOpacity>
+                )
+              })}
             </View>
-          )}
 
-          {/* Example Chips */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            className="mt-8"
-            contentContainerStyle={{ gap: 8, paddingRight: 24 }}
-          >
-            {exampleTastes.map((text, index) => (
-              <View
-                key={index}
-                className="bg-[#F7F7F7] rounded-2xl px-4 relative flex-shrink-0"
-                style={{ height: 96, width: 174 }}
-              >
-                <Text className="text-base text-black/80 mt-4" numberOfLines={4}>
-                  {text}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setSelectedTaste(text)}
-                  className="absolute bottom-2 right-2 p-1 rounded"
-                >
-                  <SymbolView name="arrow.up.forward" size={16} tintColor="#00000099" />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </ScrollView>
-        </ScrollView>
+            {isOtherSelected && (
+              <TextInput
+                value={otherForStep}
+                onChangeText={(value) =>
+                  setOtherText((prev) => ({ ...prev, [question.key]: value }))
+                }
+                placeholder="Tell us more..."
+                placeholderTextColor="#9CA3AF"
+                className="mt-5 bg-[#F7F7F7] rounded-2xl px-4 py-3 text-black text-base"
+              />
+            )}
+          </View>
+
+          <View className="pb-8 pt-4">
+            <TouchableOpacity
+              onPress={handleContinue}
+              disabled={!isCurrentStepValid || submitting}
+              className="w-full py-4 rounded-full items-center justify-center"
+              style={{ backgroundColor: isCurrentStepValid ? '#F1F1F1' : '#F3F3F3', opacity: submitting ? 0.6 : 1 }}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#000000" size="small" />
+              ) : (
+                <Text className="text-[16px] font-semibold text-black">Continue</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.replace('/(tabs)/home')}
+              className="items-center mt-4"
+            >
+              <Text className="text-[14px] text-gray-400">Skip</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   )

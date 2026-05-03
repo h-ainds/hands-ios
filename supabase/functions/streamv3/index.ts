@@ -131,20 +131,12 @@ async function extractIngredientsFromPhoto(
 interface MatchRecipeRow {
   recipe_id: string
   similarity: number
-  metadata: {
-    title: string
-    caption: string
-    image: string
-  }
 }
 
 // Raw response from search_recipes_by_ingredients RPC
 interface IngredientSearchRow {
   recipe_id: string
   rank: number
-  title: string
-  caption: string
-  image: string
 }
 
 // Transformed recipe for XML output
@@ -153,6 +145,241 @@ interface Recipe {
   title: string
   caption: string
   image: string
+  tags?: string[]
+}
+
+type RecipeMetadataRow = {
+  id: number
+  title: string | null
+  caption: string | null
+  image: string | null
+  tags?: string[] | null
+}
+
+function normalizeQueryText(s: string): string {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function tokenize(s: string): string[] {
+  const normalized = normalizeQueryText(s)
+  if (!normalized) return []
+  return normalized.split(" ").filter(Boolean)
+}
+
+function looksLikeRecipeTitleQuery(prompt: string): boolean {
+  const tokens = tokenize(prompt)
+  if (tokens.length === 0) return false
+  // Short queries with mostly content words are often direct title intents.
+  if (tokens.length <= 6) return true
+  // If the query contains quotes, treat as title-like.
+  if (prompt.includes('"') || prompt.includes("'")) return true
+  return false
+}
+
+function getAnchorTerms(prompt: string): string[] {
+  const stop = new Set([
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "but",
+    "by",
+    "for",
+    "from",
+    "fresh",
+    "how",
+    "i",
+    "in",
+    "is",
+    "it",
+    "me",
+    "of",
+    "on",
+    "or",
+    "recipe",
+    "the",
+    "to",
+    "try",
+    "with",
+    "want",
+    "make",
+  ])
+  return tokenize(prompt)
+    .filter((t) => t.length >= 5 && !stop.has(t))
+    .slice(0, 6)
+}
+
+function containsAny(haystack: string, needles: string[]): boolean {
+  const h = normalizeQueryText(haystack)
+  return needles.some((n) => n && h.includes(n))
+}
+
+async function fetchRecipeMetadataByIds(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  ids: string[],
+): Promise<Map<string, Recipe>> {
+  const normalized = Array.from(new Set(ids.map((id) => String(id).trim()).filter(Boolean)))
+  const numericIds = normalized.map((id) => Number(id)).filter((id) => Number.isFinite(id))
+
+  if (numericIds.length === 0) return new Map()
+
+  const { data, error } = await supabaseAdmin
+    .from("recipes")
+    .select("id,title,caption,image,tags")
+    .in("id", numericIds)
+
+  if (error) {
+    console.error("[Stream] Failed fetching recipes metadata from recipes:", error.message)
+    return new Map()
+  }
+
+  const rows = (data || []) as RecipeMetadataRow[]
+  const map = new Map<string, Recipe>()
+  rows.forEach((row) => {
+    map.set(String(row.id), {
+      id: String(row.id),
+      title: row.title || "Untitled Recipe",
+      caption: row.caption || "",
+      image: row.image || "",
+      tags: Array.isArray(row.tags) ? row.tags : [],
+    })
+  })
+  return map
+}
+
+async function titleLexicalCandidates(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  userPrompt: string,
+  limit = 10,
+): Promise<string[]> {
+  const q = userPrompt.trim()
+  if (!q) return []
+
+  // 1) Exact-ish substring title match
+  const { data: byTitle } = await supabaseAdmin
+    .from("recipes")
+    .select("id,title")
+    .ilike("title", `%${q}%`)
+    .limit(limit)
+
+  const idsFromTitle = (byTitle || []).map((r: any) => String(r.id))
+
+  // 2) Full-text search on searchable_title if available (tsvector)
+  // Note: if the column isn't configured for text search, Supabase will error; treat as optional.
+  let idsFromFts: string[] = []
+  try {
+    const { data: byFts } = await supabaseAdmin
+      .from("recipes")
+      .select("id")
+      .textSearch("searchable_title", q, { type: "websearch" })
+      .limit(limit)
+    idsFromFts = (byFts || []).map((r: any) => String(r.id))
+  } catch (e) {
+    // Non-fatal; some environments may not support textSearch on this column.
+  }
+
+  return Array.from(new Set([...idsFromTitle, ...idsFromFts])).filter(Boolean).slice(0, limit)
+}
+
+function applyAnchorBoostAndFilter(
+  prompt: string,
+  recipes: Recipe[],
+): Recipe[] {
+  const anchors = getAnchorTerms(prompt)
+  if (anchors.length === 0) return recipes
+
+  // Only activate if at least one recipe matches at least one anchor (avoid destructive filtering).
+  const anyAnchorMatch = recipes.some((r) =>
+    containsAny(`${r.title} ${r.caption} ${(r.tags || []).join(" ")}`, anchors),
+  )
+  if (!anyAnchorMatch) return recipes
+
+  // Score: +2 for each anchor hit in title, +1 in tags, +0.5 in caption.
+  const scored = recipes.map((r) => {
+    const titleText = normalizeQueryText(r.title)
+    const captionText = normalizeQueryText(r.caption)
+    const tagsText = normalizeQueryText((r.tags || []).join(" "))
+    let score = 0
+    anchors.forEach((a) => {
+      if (titleText.includes(a)) score += 2
+      if (tagsText.includes(a)) score += 1
+      if (captionText.includes(a)) score += 0.5
+    })
+    return { r, score }
+  })
+
+  // Conservative filter: drop only recipes with 0 anchor score IF doing so still leaves results.
+  const withSignal = scored.filter((x) => x.score > 0)
+  const filtered = withSignal.length > 0 ? withSignal : scored
+
+  return filtered
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.r)
+}
+
+function ensureGroundedAssistantText(text: string, recipes: Recipe[]): string {
+  const cleaned = String(text || "").trim()
+  if (!cleaned) return "Here are some recipes you might enjoy."
+
+  const allowedTitles = recipes.map((r) => r.title).filter(Boolean)
+  if (allowedTitles.length === 0) return "Here are some recipes you might enjoy."
+
+  const lower = cleaned.toLowerCase()
+  const mentionsAnyAllowed = allowedTitles.some((t) => lower.includes(String(t).toLowerCase()))
+
+  // If it doesn't mention any of the returned recipes, replace with a grounded generic sentence.
+  // This prevents the model from saying "Try Three Meat Lasagna" when it's not in cards.
+  if (!mentionsAnyAllowed) {
+    const topTitles = allowedTitles.slice(0, 3)
+    return `Try ${topTitles.join(", ")}.`
+  }
+
+  return cleaned
+}
+
+async function filterExistingRecipes(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  recipeIds: string[],
+): Promise<string[]> {
+  if (!recipeIds.length) return []
+
+  const normalizedIds = Array.from(new Set(recipeIds.map((id) => String(id).trim()).filter(Boolean)))
+  const numericIds = normalizedIds.map((id) => Number(id)).filter((id) => Number.isFinite(id))
+
+  if (numericIds.length === 0) {
+    console.warn("[Stream] No numeric recipe IDs returned from retrieval; dropping all cards.")
+    return []
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("recipes")
+    .select("id")
+    .in("id", numericIds)
+
+  if (error) {
+    console.error("[Stream] Failed validating retrieved recipe IDs:", error.message)
+    return []
+  }
+
+  const validIdSet = new Set((data || []).map((row) => String(row.id)))
+  const filtered = normalizedIds.filter((id) => validIdSet.has(String(id)))
+  const droppedCount = normalizedIds.length - filtered.length
+
+  if (droppedCount > 0) {
+    const droppedIds = normalizedIds.filter((id) => !validIdSet.has(id)).slice(0, 10)
+    console.warn(
+      `[Stream] Dropped ${droppedCount} invalid candidate IDs not present in recipes: ${droppedIds.join(", ")}`,
+    )
+  }
+
+  return filtered
 }
 
 async function generateEmbedding(text: string, apiKey: string): Promise<number[]> {
@@ -177,16 +404,11 @@ async function generateEmbedding(text: string, apiKey: string): Promise<number[]
   return data.data[0].embedding
 }
 
-// Transform raw RPC response to Recipe format, filtering out low-similarity results
-function transformRecipes(rows: MatchRecipeRow[]): Recipe[] {
-  return rows
-    .filter(row => row.similarity >= 0.3)
-    .map(row => ({
-      id: row.recipe_id,
-      title: row.metadata?.title || "Untitled Recipe",
-      caption: row.metadata?.caption || "",
-      image: row.metadata?.image || "",
-    }))
+function extractVectorCandidateIds(rows: MatchRecipeRow[]): string[] {
+  return (rows || [])
+    .filter((row) => row.similarity >= 0.3)
+    .map((row) => String(row.recipe_id).trim())
+    .filter(Boolean)
 }
 
 // Non-fatal wrapper around ingredient search RPC
@@ -209,38 +431,26 @@ async function searchByIngredients(
 // Merge vector search and ingredient search results using Reciprocal Rank Fusion.
 // Recipes appearing in both lists get a score boost — best of both worlds.
 // k=60 is the standard RRF constant.
-function reciprocalRankFusion(
-  vectorResults: Recipe[],
-  ingredientResults: IngredientSearchRow[],
-  k = 60
-): Recipe[] {
-  const scores = new Map<string, { score: number } & Recipe>()
+function reciprocalRankFusionIds(
+  vectorIds: string[],
+  ingredientIds: string[],
+  k = 60,
+): string[] {
+  const scores = new Map<string, number>()
 
-  vectorResults.forEach((r, i) => {
-    const id = String(r.id)
-    scores.set(id, { ...r, score: 1 / (k + i + 1) })
+  vectorIds.forEach((id, i) => {
+    const key = String(id)
+    scores.set(key, (scores.get(key) ?? 0) + 1 / (k + i + 1))
   })
 
-  ingredientResults.forEach((row, i) => {
-    const id = String(row.recipe_id)
-    const contribution = 1 / (k + i + 1)
-    const existing = scores.get(id)
-    if (existing) {
-      existing.score += contribution
-    } else {
-      scores.set(id, {
-        id,
-        title: row.title || "Untitled Recipe",
-        caption: row.caption || "",
-        image: row.image || "",
-        score: contribution,
-      })
-    }
+  ingredientIds.forEach((id, i) => {
+    const key = String(id)
+    scores.set(key, (scores.get(key) ?? 0) + 1 / (k + i + 1))
   })
 
-  return Array.from(scores.values())
-    .sort((a, b) => b.score - a.score)
-    .map(({ score: _s, ...recipe }) => recipe)
+  return Array.from(scores.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => id)
 }
 
 // Post-retrieval dietary filter: embedding retrieval is soft and cannot enforce
@@ -424,6 +634,15 @@ Deno.serve(async (req) => {
       async start(controller) {
         const encoder = new TextEncoder()
         try {
+          const requestId = crypto.randomUUID()
+          const debugEnv = Deno.env.get("RETRIEVAL_DEBUG") === "1"
+          const debugByPrompt = /lasagna|meatball|mediterranean/i.test(prompt)
+          const debug = debugEnv || debugByPrompt
+
+          if (debug) {
+            console.log(`[Stream][Debug][${requestId}] Prompt:`, prompt)
+          }
+
           // Text-only: embedding + RPCs use the user prompt. With a photo: extract
           // ingredients first (same vision task as analyze-image), then run the same
           // vector + ingredient + RRF pipeline on "ingredients + user ask".
@@ -456,6 +675,25 @@ Deno.serve(async (req) => {
           }
 
           console.log("[Stream] Retrieval query:", contextualQuery.substring(0, 150))
+          if (debug && contextualQuery !== prompt) {
+            console.log(`[Stream][Debug][${requestId}] Contextual query:`, contextualQuery)
+          }
+
+          const anchorTerms = getAnchorTerms(prompt)
+          if (debug) {
+            console.log(`[Stream][Debug][${requestId}] Anchor terms:`, anchorTerms)
+          }
+
+          const titleLike = looksLikeRecipeTitleQuery(prompt)
+          if (debug) {
+            console.log(`[Stream][Debug][${requestId}] Title-like query:`, titleLike)
+          }
+
+          // Title/lexical candidates are always recipes.id and recipes metadata is sourced from recipes.
+          const lexicalIds = await titleLexicalCandidates(supabaseAdmin, prompt, 10)
+          if (debug) {
+            console.log(`[Stream][Debug][${requestId}] Lexical candidate IDs:`, lexicalIds)
+          }
 
           const embedding = await generateEmbedding(contextualQuery, openaiKey)
 
@@ -474,11 +712,81 @@ Deno.serve(async (req) => {
             throw new Error(`Database error: ${vectorResult.error.message}`)
           }
 
-          const filteredVectorRecipes = transformRecipes(vectorResult.data || [])
-          console.log(`[Stream] Vector: ${filteredVectorRecipes.length} | Ingredient: ${ingredientRows.length}`)
+          const rawVectorRows = (vectorResult.data || []) as unknown[]
+          const rawIngredientRows = (ingredientRows || []) as unknown[]
 
-          let recipes = reciprocalRankFusion(filteredVectorRecipes, ingredientRows)
-          console.log(`[Stream] RRF merged: ${recipes.length} unique recipes`)
+          // Pull IDs for RRF. (We still log raw payloads so we can inspect whether upstream
+          // is providing metadata / polluted IDs.)
+          const vectorRowsTyped = (vectorResult.data || []) as MatchRecipeRow[]
+          const vectorIds = extractVectorCandidateIds(vectorRowsTyped)
+          const ingredientIds = (ingredientRows || [])
+            .map((row: any) => String(row.recipe_id).trim())
+            .filter(Boolean)
+
+          if (debug) {
+            const preview = (arr: unknown[]) => JSON.stringify(arr.slice(0, 12))
+            console.log(`[Stream][Debug][${requestId}] match_recipes raw (preview):`, preview(rawVectorRows))
+            console.log(`[Stream][Debug][${requestId}] search_recipes_by_ingredients raw (preview):`, preview(rawIngredientRows))
+            console.log(`[Stream][Debug][${requestId}] Vector IDs (post-sim threshold):`, vectorIds.slice(0, 30))
+            console.log(`[Stream][Debug][${requestId}] Ingredient IDs:`, ingredientIds.slice(0, 30))
+            console.log(
+              `[Stream][Debug][${requestId}] Contains 6359? vector=${vectorIds.includes("6359")} ingredient=${ingredientIds.includes("6359")} lexical=${lexicalIds.includes("6359")}`,
+            )
+          }
+
+          console.log(`[Stream] Vector candidates: ${vectorIds.length} | Ingredient candidates: ${ingredientIds.length}`)
+
+          // Merge using RRF, then prepend lexical candidates with strong preference.
+          let mergedIds = reciprocalRankFusionIds(vectorIds, ingredientIds)
+
+          // Strong exact/near-exact preference for title-like queries:
+          // if lexical IDs exist, move them to the front (deduped), preserving lexical order.
+          if (lexicalIds.length > 0) {
+            mergedIds = Array.from(new Set([...lexicalIds, ...mergedIds]))
+          }
+
+          if (debug) {
+            console.log(`[Stream][Debug][${requestId}] Merged IDs (pre-validation):`, mergedIds.slice(0, 30))
+            console.log(`[Stream][Debug][${requestId}] Contains 6359? merged=${mergedIds.includes("6359")}`)
+          }
+
+          console.log(`[Stream] RRF merged: ${mergedIds.length} unique recipe IDs`)
+
+          mergedIds = await filterExistingRecipes(supabaseAdmin, mergedIds)
+          console.log(`[Stream] After recipes.id validation: ${mergedIds.length} recipe IDs`)
+          if (debug) {
+            console.log(`[Stream][Debug][${requestId}] IDs after validation:`, mergedIds.slice(0, 30))
+            console.log(`[Stream][Debug][${requestId}] Contains 6359? validated=${mergedIds.includes("6359")}`)
+          }
+
+          const metadataMap = await fetchRecipeMetadataByIds(supabaseAdmin, mergedIds)
+          let recipes: Recipe[] = mergedIds
+            .map((id) => metadataMap.get(String(id)))
+            .filter(Boolean) as Recipe[]
+
+          const missingMeta = mergedIds.length - recipes.length
+          if (missingMeta > 0) {
+            console.warn(`[Stream] Missing metadata for ${missingMeta} recipe IDs after validation (unexpected).`)
+          }
+
+          if (debug) {
+            console.log(
+              `[Stream][Debug][${requestId}] Final recipe rows fetched from recipes (pre-anchor):`,
+              recipes.slice(0, 10).map((r) => ({ id: r.id, title: r.title, tags: (r.tags || []).slice(0, 6) })),
+            )
+            console.log(`[Stream][Debug][${requestId}] Contains 6359? recipesFetched=${recipes.some((r) => r.id === "6359")}`)
+          }
+
+          // Final relevance sanity: anchor-boost and conservative filter (non-destructive).
+          recipes = applyAnchorBoostAndFilter(prompt, recipes)
+
+          if (debug) {
+            console.log(
+              `[Stream][Debug][${requestId}] Recipes after anchor boost/filter:`,
+              recipes.slice(0, 10).map((r) => ({ id: r.id, title: r.title })),
+            )
+            console.log(`[Stream][Debug][${requestId}] Contains 6359? afterAnchor=${recipes.some((r) => r.id === "6359")}`)
+          }
 
           // Post-retrieval dietary filter — the only reliable way to enforce restrictions
           if (tastePreferences.length > 0) {
@@ -495,6 +803,13 @@ Deno.serve(async (req) => {
             return
           }
 
+          if (debug) {
+            console.log(
+              `[Stream][Debug][${requestId}] Final recipes passed to text/cards:`,
+              recipes.map((r) => ({ id: r.id, title: r.title })),
+            )
+          }
+
           const text = await getChatText(
             openaiKey,
             prompt,
@@ -503,11 +818,17 @@ Deno.serve(async (req) => {
             photoIngredientSummary,
           )
 
+          const groundedText = ensureGroundedAssistantText(text, recipes)
+          if (debug) {
+            console.log(`[Stream][Debug][${requestId}] Raw assistant text:`, text)
+            console.log(`[Stream][Debug][${requestId}] Grounded assistant text:`, groundedText)
+          }
+
           const itemsXml = recipes
             .map(r => `    <item>\n      <id>${r.id}</id>\n      <title>${r.title}</title>\n      <caption>${r.caption}</caption>\n      <image>${r.image}</image>\n    </item>`)
             .join("\n")
 
-          const xml = `<answer><text>${text}</text><items>\n${itemsXml}\n  </items></answer>`
+          const xml = `<answer><text>${groundedText}</text><items>\n${itemsXml}\n  </items></answer>`
           controller.enqueue(encoder.encode(xml))
           controller.close()
         } catch (error) {

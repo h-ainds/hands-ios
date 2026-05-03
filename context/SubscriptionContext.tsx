@@ -17,32 +17,56 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null)
   const [configured, setConfigured] = useState(false)
+  const [available, setAvailable] = useState(true)
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !available) return
 
-    if (!configured) {
-      Purchases.setLogLevel(LOG_LEVEL.DEBUG)
-      Purchases.configure({ apiKey: RC_API_KEY })
-      setConfigured(true)
+    let isCancelled = false
+    let listenerAttached = false
+    const listener = (info: CustomerInfo) => {
+      if (!isCancelled) setCustomerInfo(info)
     }
 
-    Purchases.logIn(user.id)
-    Purchases.getCustomerInfo().then(setCustomerInfo).catch(console.error)
+    const init = async () => {
+      try {
+        if (!configured) {
+          Purchases.setLogLevel(LOG_LEVEL.DEBUG)
+          Purchases.configure({ apiKey: RC_API_KEY })
+          if (!isCancelled) setConfigured(true)
+        }
 
-    const listener = (info: CustomerInfo) => setCustomerInfo(info)
-    Purchases.addCustomerInfoUpdateListener(listener)
-    return () => { Purchases.removeCustomerInfoUpdateListener(listener) }
-  }, [user?.id])
+        await Purchases.logIn(user.id)
+        const info = await Purchases.getCustomerInfo()
+        if (!isCancelled) setCustomerInfo(info)
+
+        Purchases.addCustomerInfoUpdateListener(listener)
+        listenerAttached = true
+      } catch (error) {
+        console.warn('[Subscription] RevenueCat unavailable in this runtime:', error)
+        if (!isCancelled) setAvailable(false)
+      }
+    }
+
+    void init()
+    return () => {
+      isCancelled = true
+      if (listenerAttached) {
+        Purchases.removeCustomerInfoUpdateListener(listener)
+      }
+    }
+  }, [user?.id, configured, available])
 
   const isPro = Boolean(customerInfo?.entitlements.active[ENTITLEMENT_ID])
 
   const refreshSubscription = async () => {
+    if (!available) return
     try {
       const info = await Purchases.getCustomerInfo()
       setCustomerInfo(info)
     } catch (e) {
-      console.error('[Subscription] refresh error:', e)
+      setAvailable(false)
+      console.warn('[Subscription] refresh unavailable:', e)
     }
   }
 
