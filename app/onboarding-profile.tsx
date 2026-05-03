@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   View,
   Text,
@@ -6,9 +6,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  ScrollView,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -20,7 +20,7 @@ import {
   getAndClearSignupData,
   createTasteProfile,
 } from '@/lib/auth'
-import { createTasteVectors } from '@/lib/taste-vectorization'
+import { formatOnboardingPreferenceLine, parsePreferenceLine } from '@/lib/onboarding-preference-lines'
 
 function slugifyUsername(input: string) {
   return input
@@ -134,6 +134,7 @@ export default function OnboardingProfileScreen() {
     },
   ]
 
+  /** 0 = name, 1 … questions.length = questionnaire */
   const [currentStep, setCurrentStep] = useState(0)
   const [answers, setAnswers] = useState<Record<QuestionKey, string[]>>({
     cooking_effort: [],
@@ -152,7 +153,8 @@ export default function OnboardingProfileScreen() {
     pantry_situation: '',
   })
   const [submitting, setSubmitting] = useState(false)
-  const [generatedChips, setGeneratedChips] = useState<string[]>([])
+  /** Saved onboarding lines — same strings stored in Memory as taste_preferences (no AI chips). */
+  const [savedPreferenceLines, setSavedPreferenceLines] = useState<string[]>([])
   const [showSuccessStep, setShowSuccessStep] = useState(false)
 
   // Data states
@@ -201,16 +203,16 @@ export default function OnboardingProfileScreen() {
       return
     }
 
-    const tasteText = questions
-      .map((question) => {
-        const selected = answers[question.key]
-          .filter((option) => option !== 'Something else ...')
-          .join(', ')
-        const other = otherText[question.key].trim()
-        const value = [selected, other].filter(Boolean).join(selected && other ? ', ' : '')
-        return `${question.title} ${value || 'Not specified'}`
-      })
-      .join('\n')
+    const memoryPreferences = questions.map((question) => {
+      const selected = answers[question.key]
+        .filter((option) => option !== 'Something else ...')
+        .join(', ')
+      const other = otherText[question.key].trim()
+      const value = [selected, other].filter(Boolean).join(selected && other ? ', ' : '')
+      return formatOnboardingPreferenceLine(question.title, value)
+    })
+
+    const tasteText = memoryPreferences.join('\n')
 
     if (!tasteText.trim()) {
       Alert.alert('Error', 'Please answer at least one onboarding question')
@@ -231,13 +233,11 @@ export default function OnboardingProfileScreen() {
         email: user.email,
       })
 
-      console.log('[Onboarding] Creating taste vectors and preferences')
-      const { vectors, preferences } = await createTasteVectors(tasteText)
-      setGeneratedChips(preferences)
+      // Store answers only — no taste-vectors / NLP step. Memory edits taste_preferences directly.
+      console.log('[Onboarding] Saving taste profile (questionnaire lines only)')
+      await createTasteProfile(user.id, tasteText, {}, memoryPreferences)
 
-      console.log('[Onboarding] Creating taste profile')
-      await createTasteProfile(user.id, tasteText, vectors, preferences)
-
+      setSavedPreferenceLines(memoryPreferences)
       setShowSuccessStep(true)
     } catch (err: any) {
       console.error('[Onboarding] Error:', err)
@@ -247,39 +247,52 @@ export default function OnboardingProfileScreen() {
     }
   }
 
-  const question = questions[currentStep]
-  const selectedForStep = answers[question.key]
-  const otherForStep = otherText[question.key]
+  const totalSteps = 1 + questions.length
+  const isNameStep = currentStep === 0
+  const question = !isNameStep ? questions[currentStep - 1] : null
+  const selectedForStep = question ? answers[question.key] : []
+  const otherForStep = question ? otherText[question.key] : ''
   const isOtherSelected = selectedForStep.includes('Something else ...')
 
   const progressValue = useMemo(
-    () => ((currentStep + 1) / questions.length) * 100,
-    [currentStep, questions.length]
+    () => ((currentStep + 1) / totalSteps) * 100,
+    [currentStep, totalSteps]
   )
 
   const isCurrentStepValid = useMemo(() => {
+    if (currentStep === 0) return firstName.trim().length > 0
     const hasSelection = selectedForStep.length > 0
     if (!hasSelection) return false
     if (isOtherSelected && !otherForStep.trim()) return false
     return true
-  }, [selectedForStep, isOtherSelected, otherForStep])
+  }, [currentStep, firstName, selectedForStep, isOtherSelected, otherForStep])
 
-  const toggleOption = (option: string) => {
-    setAnswers((prev) => {
-      const current = prev[question.key]
-      if (question.multi) {
-        const next = current.includes(option)
-          ? current.filter((item) => item !== option)
-          : [...current, option]
-        return { ...prev, [question.key]: next }
-      }
-      return { ...prev, [question.key]: [option] }
-    })
-  }
+  const toggleOption = useCallback(
+    (option: string) => {
+      if (currentStep === 0 || !question) return
+      const key = question.key
+      const multi = question.multi
+      setAnswers((prev) => {
+        const current = prev[key]
+        if (multi) {
+          const next = current.includes(option)
+            ? current.filter((item) => item !== option)
+            : [...current, option]
+          return { ...prev, [key]: next }
+        }
+        return { ...prev, [key]: [option] }
+      })
+    },
+    [currentStep, question]
+  )
 
   const handleContinue = () => {
     if (!isCurrentStepValid) return
-    if (currentStep === questions.length - 1) {
+    if (currentStep === 0) {
+      setCurrentStep(1)
+      return
+    }
+    if (currentStep === questions.length) {
       handleCompleteOnboarding()
       return
     }
@@ -294,39 +307,64 @@ export default function OnboardingProfileScreen() {
     router.back()
   }
 
-  // Success step: show chips (if any) and a Continue button before redirecting
+  // Success step: show saved questionnaire lines (same items as Memory → taste_preferences)
   if (showSuccessStep) {
     return (
       <SafeAreaView className="flex-1 bg-white">
         <View className="flex-1 px-6 pt-20">
           <View className="mt-0">
             <Text className="text-3xl font-extrabold tracking-tighter text-black">
-              {generatedChips.length > 0 ? 'Your preferences' : "You're all set"}
+              {savedPreferenceLines.length > 0
+                ? `Nice to meet you, ${(firstName.trim() || 'Friend').split(/\s+/)[0]}`
+                : "You're all set"}
             </Text>
             <Text className="text-base tracking-tighter text-secondary-placeholder mt-2">
-              {generatedChips.length > 0
-                ? "Here's what we picked up. You can always see this on your profile."
-                : "Welcome to Hands. Get started below."}
+              {savedPreferenceLines.length > 0
+                ? "Here's what we saved. Edit anytime in Memory."
+                : 'Welcome to Hands. Get started below.'}
             </Text>
           </View>
-          {generatedChips.length > 0 && (
-            <View className="flex-row flex-wrap gap-2 mt-8">
-              {generatedChips.map((label, index) => (
-                <View
-                  key={`${index}-${label}`}
-                  className="bg-secondary rounded-full px-4 py-2.5"
-                >
-                  <Text className="text-base text-black/90">{label}</Text>
-                </View>
-              ))}
-            </View>
+          {savedPreferenceLines.length > 0 && (
+            <ScrollView
+              className="mt-8 flex-1"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ gap: 12, paddingBottom: 8 }}
+            >
+              {savedPreferenceLines.map((line, index) => {
+                const parsed = parsePreferenceLine(line)
+                return (
+                  <View
+                    key={`${index}-${line.slice(0, 32)}`}
+                    className="w-full rounded-2xl bg-white pl-4 pr-4 py-3"
+                    style={{
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.06,
+                      shadowRadius: 9,
+                      elevation: 2,
+                    }}
+                  >
+                    {parsed.question ? (
+                      <>
+                        <Text className="text-xs text-black/50 leading-5 mb-1">{parsed.question}</Text>
+                        <Text className="text-base text-black leading-6">
+                          {parsed.answer.trim() ? parsed.answer : '—'}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text className="text-base text-black leading-6">{line}</Text>
+                    )}
+                  </View>
+                )
+              })}
+            </ScrollView>
           )}
-<TouchableOpacity
-  onPress={() => router.replace('/(tabs)/home')}
-  className="w-full bg-primary py-4 rounded-full items-center justify-center mt-10"
->
-  <Text className="text-white text-lg font-semibold">Continue to Hands</Text>
-</TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.replace('/(tabs)/home')}
+            className="w-full bg-primary py-4 rounded-full items-center justify-center mt-6 mb-4"
+          >
+            <Text className="text-white text-lg font-semibold">Continue to Hands</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     )
@@ -355,52 +393,80 @@ export default function OnboardingProfileScreen() {
           </View>
 
           <View className="flex-1 pt-6">
-            <Text className="text-[26px] font-extrabold tracking-tight leading-[32px] text-black">
-              {question.title}
-            </Text>
+            {isNameStep ? (
+              <>
+                <Text className="text-[26px] font-extrabold tracking-tight leading-[32px] text-black">
+                  What should we call you?
+                </Text>
+                <Text className="text-base tracking-tighter text-secondary-placeholder mt-3 leading-6">
+                  We'll use your name to make recipes and tips feel a little more personal.
+                </Text>
+                <TextInput
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  placeholder="Your name"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  autoComplete="name-given"
+                  maxLength={48}
+                  className="mt-8 bg-[#F7F7F7] rounded-2xl px-4 py-4 text-black text-[19px] leading-7"
+                  returnKeyType="done"
+                  onSubmitEditing={handleContinue}
+                />
+              </>
+            ) : question ? (
+              <>
+                <Text className="text-[26px] font-extrabold tracking-tight leading-[32px] text-black">
+                  {question.title}
+                </Text>
 
-            <View className="mt-7 gap-3">
-              {question.options.map((option, index) => {
-                const selected = selectedForStep.includes(option)
-                return (
-                  <TouchableOpacity
-                    key={option}
-                    onPress={() => toggleOption(option)}
-                    className="flex-row items-center"
-                    activeOpacity={0.8}
-                  >
-                    {question.showNumbers ? (
-                      <View className="w-9 h-9 rounded-full bg-[#EFEFEF] items-center justify-center mr-3">
-                        <Text className={`text-[18px] ${selected ? 'text-primary' : 'text-black'}`}>
-                          {index + 1}
+                <View className="mt-7 gap-3">
+                  {question.options.map((option, index) => {
+                    const selected = selectedForStep.includes(option)
+                    return (
+                      <TouchableOpacity
+                        key={option}
+                        onPress={() => toggleOption(option)}
+                        className="flex-row items-center"
+                        activeOpacity={0.8}
+                      >
+                        {question.showNumbers ? (
+                          <View className="w-9 h-9 rounded-full bg-[#EFEFEF] items-center justify-center mr-3">
+                            <Text className={`text-[18px] ${selected ? 'text-primary' : 'text-black'}`}>
+                              {index + 1}
+                            </Text>
+                          </View>
+                        ) : (
+                          <View className="w-9 h-9 rounded-full bg-[#EFEFEF] items-center justify-center mr-3">
+                            {selected ? (
+                              <SymbolView name="checkmark" size={16} tintColor="#6CD401" />
+                            ) : null}
+                          </View>
+                        )}
+                        <Text
+                          className={`text-[19px] leading-[26px] flex-1 ${option === 'Something else ...' ? 'text-gray-400' : 'text-black'}`}
+                        >
+                          {option}
                         </Text>
-                      </View>
-                    ) : (
-                      <View className="w-9 h-9 rounded-full bg-[#EFEFEF] items-center justify-center mr-3">
-                        {selected ? (
-                          <SymbolView name="checkmark" size={16} tintColor="#6CD401" />
-                        ) : null}
-                      </View>
-                    )}
-                    <Text className={`text-[19px] leading-[26px] flex-1 ${option === 'Something else ...' ? 'text-gray-400' : 'text-black'}`}>
-                      {option}
-                    </Text>
-                  </TouchableOpacity>
-                )
-              })}
-            </View>
+                      </TouchableOpacity>
+                    )
+                  })}
+                </View>
 
-            {isOtherSelected && (
-              <TextInput
-                value={otherForStep}
-                onChangeText={(value) =>
-                  setOtherText((prev) => ({ ...prev, [question.key]: value }))
-                }
-                placeholder="Tell us more..."
-                placeholderTextColor="#9CA3AF"
-                className="mt-5 bg-[#F7F7F7] rounded-2xl px-4 py-3 text-black text-base"
-              />
-            )}
+                {isOtherSelected && (
+                  <TextInput
+                    value={otherForStep}
+                    onChangeText={(value) =>
+                      setOtherText((prev) => ({ ...prev, [question.key]: value }))
+                    }
+                    placeholder="Tell us more..."
+                    placeholderTextColor="#9CA3AF"
+                    className="mt-5 bg-[#F7F7F7] rounded-2xl px-4 py-3 text-black text-base"
+                  />
+                )}
+              </>
+            ) : null}
           </View>
 
           <View className="pb-8 pt-4">
