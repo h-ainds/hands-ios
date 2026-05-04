@@ -16,6 +16,10 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
 import { useAuth } from '@/context/AuthContext'
 import { getTasteProfile, updateTastePreferences } from '@/lib/auth'
+import {
+  formatOnboardingPreferenceLine,
+  parsePreferenceLine,
+} from '@/lib/onboarding-preference-lines'
 import BackButton from '@/components/BackButton'
 
 const MAX_CHIPS = 7
@@ -38,6 +42,8 @@ export default function MemoryScreen() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  /** When set, the stored line is an onboarding Q&A row — only `editDraft` (answer) is editable. */
+  const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [addDraft, setAddDraft] = useState<string | null>(null)
 
@@ -82,7 +88,7 @@ export default function MemoryScreen() {
     setAddDraft(null)
     if (!trimmed) return
     if (wordCount(trimmed) > MAX_WORDS) {
-      Alert.alert('Invalid', 'Maximum 25 words per preference.')
+      Alert.alert('Invalid', 'Maximum 25 words per note.')
       return
     }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
@@ -92,32 +98,42 @@ export default function MemoryScreen() {
   const handleCancelAdd = () => setAddDraft(null)
 
   const handleEdit = (index: number) => {
+    const line = list[index] ?? ''
+    const parsed = parsePreferenceLine(line)
     setEditingIndex(index)
-    setEditDraft(list[index] ?? '')
+    setEditingQuestion(parsed.question)
+    setEditDraft(parsed.answer)
   }
 
   const handleSaveEdit = () => {
-    const trimmed = editDraft.trim()
     if (editingIndex == null) return
+    const trimmed = editDraft.trim()
+    if (trimmed && wordCount(trimmed) > MAX_WORDS) {
+      Alert.alert('Invalid', 'Maximum 25 words per answer.')
+      return
+    }
+    const idx = editingIndex
+    const question = editingQuestion
     setEditingIndex(null)
+    setEditingQuestion(null)
     setEditDraft('')
     if (!trimmed) {
-      const next = list.filter((_, i) => i !== editingIndex)
+      const next = list.filter((_, i) => i !== idx)
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
       persist(next)
       return
     }
-    if (wordCount(trimmed) > MAX_WORDS) {
-      Alert.alert('Invalid', 'Maximum 25 words per preference.')
-      return
-    }
+    const line = question
+      ? formatOnboardingPreferenceLine(question, trimmed)
+      : trimmed
     const next = [...list]
-    next[editingIndex] = trimmed
+    next[idx] = line
     persist(next)
   }
 
   const handleCancelEdit = () => {
     setEditingIndex(null)
+    setEditingQuestion(null)
     setEditDraft('')
   }
 
@@ -176,14 +192,18 @@ export default function MemoryScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
-          <Text className="text-3xl font-extrabold tracking-tighter text-black mb-6">Memory</Text>
+          <Text className="text-3xl font-extrabold tracking-tighter text-black mb-2">Memory</Text>
+          <Text className="text-sm text-black/55 mb-6 leading-5">
+            Onboarding answers are shown as a fixed question with your reply below. You can only change the reply; add
+            custom notes with Add.
+          </Text>
 
           {loading ? (
             <ActivityIndicator size="small" className="py-4" />
           ) : (
             <>
               <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-sm text-black/60">Preferences</Text>
+                <Text className="text-sm text-black/60">Saved preferences</Text>
                 <TouchableOpacity
                   onPress={handleAdd}
                   disabled={list.length >= MAX_CHIPS || saving}
@@ -194,14 +214,22 @@ export default function MemoryScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View className="flex-row flex-wrap gap-2">
-                {list.map((label, index) =>
-                  editingIndex === index ? (
-                    <View key={`edit-${index}`} className="w-full max-w-md rounded-2xl bg-[#F7F7F7] p-3">
+              <View className="gap-3">
+                {list.map((line, index) => {
+                  const parsed = parsePreferenceLine(line)
+                  const isStructured = parsed.question != null
+
+                  return editingIndex === index ? (
+                    <View key={`edit-${index}`} className="w-full rounded-2xl bg-[#F7F7F7] p-4">
+                      {parsed.question ? (
+                        <Text className="text-xs text-black/50 mb-2 leading-5">{parsed.question}</Text>
+                      ) : (
+                        <Text className="text-xs text-black/45 mb-2">Custom note</Text>
+                      )}
                       <TextInput
                         value={editDraft}
                         onChangeText={onEditDraftChange}
-                        placeholder="Edit preference (max 25 words)"
+                        placeholder={isStructured ? 'Your answer' : 'Edit note (max 25 words)'}
                         placeholderTextColor="#9CA3AF"
                         className="text-base text-black min-h-[44px]"
                         multiline
@@ -209,7 +237,7 @@ export default function MemoryScreen() {
                       />
                       <Text className="text-xs text-black/50 mt-1">
                         {editWords}/{MAX_WORDS} words
-                        {editWords >= MAX_WORDS && ' — Maximum 25 words per preference'}
+                        {editWords >= MAX_WORDS && ' — Maximum 25 words'}
                       </Text>
                       <View className="flex-row gap-2 mt-2">
                         <TouchableOpacity onPress={handleSaveEdit} className="bg-primary rounded-full px-3 py-1.5">
@@ -221,35 +249,43 @@ export default function MemoryScreen() {
                       </View>
                     </View>
                   ) : (
-<View
-  key={`${index}-${label}`}
-  className="flex-row items-center rounded-full bg-white pl-4 pr-2 py-2.5 gap-2 self-start max-w-full"
-  style={{
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 9,
-    elevation: 2,
-  }}
->
-                      <View className="flex-1 mr-1" style={{ minWidth: 100 }}>
-                        <Text className="text-base text-black" numberOfLines={3}>
-                          {label}
-                        </Text>
+                    <View
+                      key={`row-${index}`}
+                      className="w-full flex-row items-start rounded-2xl bg-white pl-4 pr-2 py-3 gap-2"
+                      style={{
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.06,
+                        shadowRadius: 9,
+                        elevation: 2,
+                      }}
+                    >
+                      <View className="flex-1 min-w-0 pr-1">
+                        {parsed.question ? (
+                          <>
+                            <Text className="text-xs text-black/50 leading-5 mb-1">{parsed.question}</Text>
+                            <Text className="text-base text-black leading-6">
+                              {parsed.answer.trim() ? parsed.answer : '—'}
+                            </Text>
+                          </>
+                        ) : (
+                          <Text className="text-base text-black leading-6">{line}</Text>
+                        )}
                       </View>
-                      <TouchableOpacity onPress={() => handleEllipsis(index)} className="p-3">
-  <SymbolView name="ellipsis" size={18} tintColor="#000000" />
-</TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleEllipsis(index)} className="p-2 mt-0.5">
+                        <SymbolView name="ellipsis" size={18} tintColor="#000000" />
+                      </TouchableOpacity>
                     </View>
                   )
-                )}
+                })}
 
                 {addDraft != null && (
-                  <View className="w-full max-w-md rounded-2xl bg-[#F7F7F7] p-3">
+                  <View className="w-full rounded-2xl bg-[#F7F7F7] p-4">
+                    <Text className="text-xs text-black/45 mb-2">Custom note</Text>
                     <TextInput
                       value={addDraft}
                       onChangeText={onAddDraftChange}
-                      placeholder="New preference (max 25 words)"
+                      placeholder="Anything else we should remember (max 25 words)"
                       placeholderTextColor="#9CA3AF"
                       className="text-base text-black min-h-[44px]"
                       multiline
@@ -277,7 +313,9 @@ export default function MemoryScreen() {
               </View>
 
               {list.length === 0 && addDraft == null && !loading && (
-                <Text className="text-base text-black/40 mt-2">No preferences saved yet. Tap Add to create one.</Text>
+                <Text className="text-base text-black/40 mt-2">
+                  No preferences yet. Complete onboarding or tap Add for a custom note.
+                </Text>
               )}
             </>
           )}
