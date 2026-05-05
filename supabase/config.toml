@@ -391,3 +391,9 @@ entrypoint = "./functions/streamv3/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/streamv3/*.html" ]
+
+[functions.streamv5]
+enabled = true
+verify_jwt = true
+import_map = "./functions/streamv3/deno.json"
+entrypoint = "./functions/streamv3/index.ts"

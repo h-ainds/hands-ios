@@ -9,11 +9,20 @@ const corsHeaders = {
 
 type VisionMimeType = "image/jpeg" | "image/png" | "image/webp" | "image/gif"
 
+interface RecipeContext {
+  title: string
+  caption: string | null
+  ingredients: Record<string, string[]> | null
+  steps: string[] | null
+  tags: string[] | null
+}
+
 interface RequestBody {
   prompt: string
   history?: string[] // last 2 user messages, oldest first
   imageBase64?: string
   mimeType?: string
+  recipeContext?: RecipeContext
 }
 
 interface VisionIngredient {
@@ -600,13 +609,58 @@ Deno.serve(async (req) => {
     }
 
     const body = (await req.json()) as RequestBody
-    const { prompt, imageBase64, mimeType } = body
+    const { prompt, imageBase64, mimeType, recipeContext } = body
 
     if (!prompt || typeof prompt !== "string") {
       return new Response(
         JSON.stringify({ error: "Invalid prompt" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
+    }
+
+    // Recipe Q&A mode — skip retrieval entirely, answer about the specific recipe
+    if (recipeContext) {
+      console.log("[Stream] Mode: recipe-qa, recipe:", recipeContext.title)
+
+      const ingredientLines = recipeContext.ingredients
+        ? Object.entries(recipeContext.ingredients)
+            .flatMap(([group, items]) => (items ?? []).map(i => group === "Ingredients" ? i : `${i} (${group})`))
+            .join(", ")
+        : ""
+
+      const recipeText = [
+        `Title: ${recipeContext.title}`,
+        recipeContext.caption ? `About: ${recipeContext.caption}` : "",
+        recipeContext.tags?.length ? `Tags: ${recipeContext.tags.join(", ")}` : "",
+        ingredientLines ? `Ingredients: ${ingredientLines}` : "",
+        recipeContext.steps?.length
+          ? `Steps:\n${recipeContext.steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
+          : "",
+      ].filter(Boolean).join("\n")
+
+      const qaResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          stream: false,
+          messages: [
+            {
+              role: "system",
+              content: `You are a helpful cooking assistant. Answer questions about the following recipe concisely and helpfully. Keep answers under 3 sentences unless a detailed explanation is truly needed.\n\n${recipeText}`,
+            },
+            { role: "user", content: prompt },
+          ],
+        }),
+      })
+
+      const qaData = await qaResponse.json()
+      const answer = qaData.choices?.[0]?.message?.content?.trim() ?? "I couldn't answer that. Please try again."
+      const xml = `<answer><text>${answer}</text><items></items></answer>`
+
+      return new Response(xml, {
+        headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-cache" },
+      })
     }
 
     // Fetch user taste preferences for post-retrieval filtering

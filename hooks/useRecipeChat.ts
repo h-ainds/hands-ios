@@ -19,10 +19,19 @@ export type StreamingStatus =
   | "typing"
   | "error";
 
+export type RecipeContext = {
+  title: string;
+  caption: string | null;
+  ingredients: { [key: string]: string[] | undefined } | null;
+  steps: string[] | null;
+  tags: string[] | null;
+};
+
 export type ChatSendAttachment = {
   context?: string;
   imageBase64?: string;
   mimeType?: string;
+  recipeContext?: RecipeContext;
 };
 
 const DEFAULT_IMAGE_CONTEXT = "What can I make with these ingredients?";
@@ -318,6 +327,9 @@ export function useRecipeChat(
           requestBody.context = normalizedContext || DEFAULT_IMAGE_CONTEXT;
           requestBody.imageBase64 = payload.imageBase64;
           if (payload.mimeType) requestBody.mimeType = payload.mimeType;
+        }
+        if (payload?.recipeContext) {
+          requestBody.recipeContext = payload.recipeContext;
         }
 
         // Make POST request to streaming endpoint

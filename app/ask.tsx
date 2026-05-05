@@ -7,10 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
 import RevenueCatUI from 'react-native-purchases-ui'
 import ChatView from '@/components/chat/ChatView'
-import { useRecipeChat } from '@/hooks/useRecipeChat'
+import { useRecipeChat, RecipeContext } from '@/hooks/useRecipeChat'
 import { useUsageTracking } from '@/hooks/useUsageTracking'
 import { supabase } from '@/lib/supabase/client'
 import BackButton from '@/components/BackButton'
+import type { Recipe } from '@/types'
 
 type MimeType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
 type ImageSource = 'camera' | 'library'
@@ -36,11 +37,12 @@ type PersistedConversationMessage = {
 
 export default function AskScreen() {
   const router = useRouter()
-  const { conversationId, imageUri, prompt: routePrompt, openCamera } = useLocalSearchParams()
+  const { conversationId, imageUri, prompt: routePrompt, openCamera, recipeId } = useLocalSearchParams()
   const [input, setInput] = useState('')
   const [userId, setUserId] = useState<string | null>(null)
   const [conversationLoaded, setConversationLoaded] = useState(false)
   const [attachment, setAttachment] = useState<Attachment | null>(null)
+  const [recipeContext, setRecipeContext] = useState<Recipe | null>(null)
 
   const { messages, recipeCards, status, isLoading, sendMessage, cancelRequest, setMessages, setRecipeCards } = useRecipeChat({
     timeout: 30000,
@@ -59,6 +61,20 @@ export default function AskScreen() {
     }
     getUser()
   }, [])
+
+  useEffect(() => {
+    if (!recipeId) return
+    const id = Array.isArray(recipeId) ? recipeId[0] : recipeId
+    supabase
+      .from('recipes')
+      .select('id, title, image, caption, steps, tags, ingredients')
+      .eq('id', id)
+      .single()
+      .then(({ data, error }) => {
+        if (error) { console.error(error); return }
+        if (data) setRecipeContext(data as Recipe)
+      })
+  }, [recipeId])
 
   useEffect(() => {
     if (conversationId && !conversationLoaded) {
@@ -261,16 +277,26 @@ export default function AskScreen() {
     await incrementMessage()
     if (hasImage) await incrementImage()
 
+    const rc: RecipeContext | undefined = recipeContext
+      ? {
+          title: recipeContext.title,
+          caption: recipeContext.caption,
+          ingredients: recipeContext.ingredients,
+          steps: recipeContext.steps,
+          tags: recipeContext.tags,
+        }
+      : undefined
+
     await sendMessage(
       displayText,
       conversationId as string | undefined,
       hasImage
-        ? { imageBase64: attachment!.base64, mimeType: attachment!.mimeType, context: typedContext }
-        : { context: typedContext }
+        ? { imageBase64: attachment!.base64, mimeType: attachment!.mimeType, context: typedContext, recipeContext: rc }
+        : { context: typedContext, recipeContext: rc }
     )
 
     if (hasImage) clearAttachment()
-  }, [input, isLoading, hasContent, canSendMessage, sendMessage, conversationId, attachment, clearAttachment, incrementMessage, incrementImage])
+  }, [input, isLoading, hasContent, canSendMessage, sendMessage, conversationId, attachment, clearAttachment, incrementMessage, incrementImage, recipeContext])
 
   const handleBack = useCallback(() => {
     if (isLoading) cancelRequest()
@@ -289,10 +315,12 @@ export default function AskScreen() {
           {!isChatStarted && !hasContent ? (
             <View className="flex-1 items-center justify-center px-8">
               <Text className="text-2.5xl font-semibold text-black text-center tracking-tighter">
-                Turn leftovers into dinner
+                {recipeContext ? `Ask about ${recipeContext.title}` : 'Turn leftovers into dinner'}
               </Text>
               <Text className="text-base text-secondary-muted text-center mt-2 tracking-tight leading-6">
-                Get recipe ideas tailored to your ingredients and goals.
+                {recipeContext
+                  ? 'Ask anything — substitutions, pairings, nutrition, timing.'
+                  : 'Get recipe ideas tailored to your ingredients and goals.'}
               </Text>
             </View>
           ) : (
@@ -302,6 +330,18 @@ export default function AskScreen() {
 
         {/* ── Composer — always anchored above keyboard ── */}
         <View className="px-4 pb-4">
+          {/* Recipe context pill */}
+          {recipeContext && (
+            <View className="flex-row items-center bg-gray-100 rounded-2xl px-3 py-2 mb-2 self-start" style={{ maxWidth: '80%' }}>
+              {recipeContext.image ? (
+                <Image source={{ uri: recipeContext.image }} className="w-8 h-8 rounded-lg mr-2" />
+              ) : (
+                <SymbolView name="fork.knife" size={18} tintColor="#6B7280" style={{ marginRight: 8 }} />
+              )}
+              <Text className="text-sm font-semibold text-black flex-1" numberOfLines={1}>{recipeContext.title}</Text>
+            </View>
+          )}
+
           {/* Attachment preview pill */}
           {attachment?.uri && (
             <View
