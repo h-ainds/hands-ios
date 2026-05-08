@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { View, Text, Image, Pressable, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
@@ -6,6 +7,7 @@ import { supabase } from '@/lib/supabase/client'
 import { useRouter } from 'expo-router'
 import { SymbolView } from 'expo-symbols'
 import { clearAllUserData } from '@/lib/storage'
+import { getUserProfile } from '@/lib/auth'
 import Purchases from 'react-native-purchases'
 import RevenueCatUI from 'react-native-purchases-ui'
 
@@ -13,6 +15,34 @@ export default function ProfileScreen() {
   const { user } = useAuth()
   const { isPro } = useSubscription()
   const router = useRouter()
+  const [profileFirstName, setProfileFirstName] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadProfileName() {
+      if (!user?.id) {
+        setProfileFirstName(null)
+        return
+      }
+
+      const profile = await getUserProfile(user.id)
+      const name =
+        typeof profile?.first_name === 'string' && profile.first_name.trim()
+          ? profile.first_name.trim()
+          : null
+
+      if (!cancelled) {
+        setProfileFirstName(name)
+      }
+    }
+
+    loadProfileName()
+
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -94,7 +124,11 @@ export default function ProfileScreen() {
   }
 
   const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture
-  const firstName = user?.user_metadata?.first_name || 'You'
+  const firstName =
+    profileFirstName ||
+    (typeof user?.user_metadata?.first_name === 'string' && user.user_metadata.first_name.trim()
+      ? user.user_metadata.first_name.trim()
+      : 'You')
   const email = user?.email || ''
 
   return (
