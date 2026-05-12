@@ -194,8 +194,7 @@ export default function MemoryScreen() {
         >
           <Text className="text-3xl font-extrabold tracking-tighter text-black mb-2">Memory</Text>
           <Text className="text-sm text-black/55 mb-6 leading-5">
-            Onboarding answers are shown as a fixed question with your reply below. You can only change the reply; add
-            custom notes with Add.
+            Your preferences will apply to all conversations. 
           </Text>
 
           {loading ? (

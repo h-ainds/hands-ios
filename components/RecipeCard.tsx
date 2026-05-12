@@ -12,7 +12,7 @@ interface RecipeCardProps {
   title: string
   image?: string
   cardType?: 'vertical' | 'square' | 'horizontal'
-  rounded?: 'lg' | 'xl' | '2xl'| 'none'
+  rounded?: 'lg' | 'xl' | '2xl' | '3xl' | 'none'
   backgroundColor?: string
   showActionButton?: boolean
   isFavorited?: boolean
@@ -49,7 +49,6 @@ export default function RecipeCard({
   const [imageError, setImageError] = useState(false)
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined)
   const [dbFetched, setDbFetched] = useState(false)
-  const spinAnim = useRef(new Animated.Value(0)).current
   const sheetAnim = useRef(new Animated.Value(0)).current
 
   const normalizedRecipeId =
@@ -117,7 +116,7 @@ export default function RecipeCard({
       case 'square':
         return 'w-full aspect-square'
       case 'horizontal':
-        return 'w-full h-24 flex-row'
+        return 'w-full aspect-[2.38]' // Parent controls horizontal padding; aspect ratio defines the height
       default:
         return 'w-36 aspect-[1/2]'
     }
@@ -133,6 +132,8 @@ export default function RecipeCard({
         return 'rounded-xl'
       case '2xl':
         return 'rounded-2xl'
+      case '3xl':
+        return 'rounded-3xl'         // 20px corner radius — matches iOS large card convention
       default:
         return 'rounded-xl'
     }
@@ -143,9 +144,9 @@ export default function RecipeCard({
       case 'vertical':
         return 'text-base font-bold tracking-tighter leading-tighter'
       case 'square':
-        return 'text-base font-extrabold leading-tight tracking-tighter'
+        return 'text-base font-bold leading-tighter tracking-tighter'
       case 'horizontal':
-        return 'text-base font-bold tracking-tight'
+        return 'text-base font-bold tracking-tighter leading-tighter'
       default:
         return 'text-lg font-bold tracking-tight'
     }
@@ -156,7 +157,7 @@ export default function RecipeCard({
       case 'vertical':
         return 'px-2 py-2'
       case 'square':
-        return 'px-4 py-5'
+        return 'px-3 py-3'
       case 'horizontal':
         return 'px-3 py-3'
       default:
@@ -166,22 +167,6 @@ export default function RecipeCard({
 
   const handleActionPress = () => {
     if (favoriteLoading) return
-
-    spinAnim.setValue(0)
-    Animated.sequence([
-      Animated.timing(spinAnim, {
-        toValue: 1,
-        duration: 150,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(spinAnim, {
-        toValue: 0,
-        duration: 140,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start()
     setIsSheetMounted(true)
     setIsSheetOpen(true)
   }
@@ -239,10 +224,6 @@ export default function RecipeCard({
       ? require('../assets/placeholder.png')
       : { uri: imageUrl }
   const showAddedState = isFavorited ?? isAdded
-  const spin = spinAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '50deg'],
-  })
   const backdropOpacity = sheetAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 1],
@@ -275,25 +256,24 @@ export default function RecipeCard({
         resizeMode="cover"
         onError={() => setImageError(true)}
       />
-      
-      <View className="absolute inset-0 justify-end">
-  <LinearGradient
-    colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']}
-    start={{ x: 0.5, y: 1 }}
-    end={{ x: 0.5, y: 0 }}
-    className="w-full"
-  >
-    <View className={titlePadding}>
-      <Text
-        className={`text-white ${titleClasses}`}
-        numberOfLines={2}
-      >
-        {title}
-      </Text>
-    </View>
-  </LinearGradient>
-</View>
 
+      <View className="absolute inset-0 justify-end">
+        <LinearGradient
+          colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']}
+          start={{ x: 0.5, y: 1 }}
+          end={{ x: 0.5, y: 0 }}
+          className="w-full"
+        >
+          <View className={titlePadding}>
+            <Text
+              className={`text-white ${titleClasses}`}
+              numberOfLines={2}
+            >
+              {title}
+            </Text>
+          </View>
+        </LinearGradient>
+      </View>
 
       {showActionButton && (
         <Pressable
@@ -302,16 +282,13 @@ export default function RecipeCard({
             handleActionPress()
           }}
           disabled={favoriteLoading}
-          className={`absolute ${
-            cardType === 'square' ? 'bottom-4' : 'top-3'
-          } right-3 bg-white rounded-full p-1.5 shadow-md ${favoriteLoading ? 'opacity-70' : ''}`}
+          className={`absolute top-3 right-3 bg-white rounded-full p-2 shadow-md ${
+            favoriteLoading ? 'opacity-70' : ''
+          }`}
         >
-          <Animated.View
-            className="w-6 h-6 items-center justify-center"
-            style={{ transform: [{ rotate: spin }] }}
-          >
-            {showAddedState ? <CheckIcon /> : <PlusIcon />}
-          </Animated.View>
+<View className="w-6 h-6 items-center justify-center">
+  {showAddedState ? <CheckIcon /> : <PlusIcon />}
+</View>
         </Pressable>
       )}
 
