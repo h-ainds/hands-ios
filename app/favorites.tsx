@@ -24,12 +24,14 @@ export default function FavoritesScreen() {
       <BackButton />
 
       <View className="px-4 pt-16 pb-3">
-        <Text className="text-3xl font-extrabold tracking-tighter">Favorites</Text>
+        <Text className="text-3xl font-extrabold tracking-tighter pt-14">Favorites</Text>
       </View>
 
       {!user ? (
         <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-base text-gray-500 text-center">Sign in to save and view favorite recipes.</Text>
+          <Text className="text-base text-gray-500 text-center">
+            Sign in to save and view favorite recipes.
+          </Text>
         </View>
       ) : loading ? (
         <View className="flex-1 items-center justify-center">
@@ -41,30 +43,30 @@ export default function FavoritesScreen() {
         </View>
       ) : favorites.length === 0 ? (
         <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-base text-gray-500 text-center">No favorites yet. Tap + on any recipe card to save one.</Text>
+          <Text className="text-base text-gray-500 text-center">
+            No favorites yet. Tap + on any recipe card to save one.
+          </Text>
         </View>
       ) : (
         <FlatList
+          key="favorites-horizontal"
           data={favorites}
           keyExtractor={(item) => String(item.id)}
-          numColumns={2}
-          contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
-          columnWrapperStyle={{ gap: 12 }}
-          ItemSeparatorComponent={() => <View className="h-4" />}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 }}
+          ItemSeparatorComponent={() => <View className="h-3" />}
           renderItem={({ item }) => (
-            <View className="flex-1">
-              <RecipeCard
-                recipeId={item.id}
-                title={item.title}
-                image={item.image ?? undefined}
-                cardType="square"
-                showActionButton
-                isFavorited
-                favoriteLoading={pendingRecipeIds.has(Number(item.id))}
-                onToggleFavorite={handleRemoveFavorite}
-                onPress={() => router.push(`/recipe/${item.id}`)}
-              />
-            </View>
+            <RecipeCard
+              recipeId={item.id}
+              title={item.title}
+              image={item.image ?? undefined}
+              cardType="horizontal"
+              rounded="3xl"
+              showActionButton
+              isFavorited
+              favoriteLoading={pendingRecipeIds.has(Number(item.id))}
+              onToggleFavorite={handleRemoveFavorite}
+              onPress={() => router.push(`/recipe/${item.id}`)}
+            />
           )}
         />
       )}

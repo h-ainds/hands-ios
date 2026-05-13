@@ -163,7 +163,7 @@ export default function ProfileScreen() {
             className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
           >
             <SymbolView name="star" size={20} tintColor="#6CD401" />
-            <Text className="text-black ml-3 text-xl font-bold flex-1">Upgrade to Hands Plus</Text>
+            <Text className="text-black ml-3 text-xl font-bold flex-1">Upgrade</Text>
             <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
           </Pressable>
         )}
@@ -182,7 +182,7 @@ export default function ProfileScreen() {
           onPress={() => router.push('/favorites')}
           className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
         >
-          <SymbolView name="heart.fill" size={20} tintColor="#000" />
+          <SymbolView name="heart" size={20} tintColor="#000" />
           <Text className="text-black ml-3 text-xl font-bold flex-1">Favorites</Text>
           <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
         </Pressable>

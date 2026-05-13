@@ -396,10 +396,7 @@ export default function OnboardingProfileScreen() {
             {isNameStep ? (
               <>
                 <Text className="text-[26px] font-extrabold tracking-tight leading-[32px] text-black">
-                  What should we call you?
-                </Text>
-                <Text className="text-base tracking-tighter text-secondary-placeholder mt-3 leading-6">
-                  We'll use your name to make recipes and tips feel a little more personal.
+                  What should I call you?
                 </Text>
                 <TextInput
                   value={firstName}

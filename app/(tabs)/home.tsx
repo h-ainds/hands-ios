@@ -268,7 +268,7 @@ export default function HomeScreen() {
         {/* Recent Recipes Section */}
         <View className="py-5">
           <Text className="text-2xl font-bold tracking-tighter mb-2 px-4">
-            Recent Recipes
+            Recents
           </Text>
           {recentLoading ? (
             <View className="px-4 py-8">
