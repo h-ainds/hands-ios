@@ -13,6 +13,7 @@ import {
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
+import { LinearGradient } from 'expo-linear-gradient'
 import {
   getCurrentUser,
   createUserProfile,
@@ -69,6 +70,7 @@ export default function OnboardingProfileScreen() {
         'Something else ...',
       ],
       multi: false,
+      showNumbers: true,
     },
     {
       key: 'dietary_preferences',
@@ -80,7 +82,7 @@ export default function OnboardingProfileScreen() {
         'No restrictions',
         'Something else ...',
       ],
-      multi: false,
+      multi: true,
     },
     {
       key: 'cuisines',
@@ -108,6 +110,18 @@ export default function OnboardingProfileScreen() {
       showNumbers: true,
     },
     {
+      key: 'pantry_situation',
+      title: "What's your fridge/pantry situation usually like?",
+      options: [
+        'Well-stocked with staples',
+        'I prefer recipes with few ingredients',
+        'I shop fresh for each meal',
+        'I rely a lot on canned/frozen',
+        'Something else ...',
+      ],
+      multi: true,
+    },
+    {
       key: 'meal_type',
       title: 'What kind of meal do you need most?',
       options: [
@@ -119,18 +133,6 @@ export default function OnboardingProfileScreen() {
       ],
       multi: false,
       showNumbers: true,
-    },
-    {
-      key: 'pantry_situation',
-      title: "What's your fridge/pantry situation usually like?",
-      options: [
-        'Well-stocked with staples',
-        'I prefer recipes with few ingredients',
-        'I shop fresh for each meal',
-        'I rely a lot on canned/frozen',
-        'Something else ...',
-      ],
-      multi: true,
     },
   ]
 
@@ -162,6 +164,7 @@ export default function OnboardingProfileScreen() {
   const [firstName, setFirstName] = useState('')
 
   const hasCheckedAuth = useRef(false)
+  const otherInputRef = useRef<TextInput | null>(null)
 
   useEffect(() => {
     if (hasCheckedAuth.current) return
@@ -252,7 +255,6 @@ export default function OnboardingProfileScreen() {
   const question = !isNameStep ? questions[currentStep - 1] : null
   const selectedForStep = question ? answers[question.key] : []
   const otherForStep = question ? otherText[question.key] : ''
-  const isOtherSelected = selectedForStep.includes('Something else ...')
 
   const progressValue = useMemo(
     () => ((currentStep + 1) / totalSteps) * 100,
@@ -261,15 +263,16 @@ export default function OnboardingProfileScreen() {
 
   const isCurrentStepValid = useMemo(() => {
     if (currentStep === 0) return firstName.trim().length > 0
-    const hasSelection = selectedForStep.length > 0
-    if (!hasSelection) return false
-    if (isOtherSelected && !otherForStep.trim()) return false
-    return true
-  }, [currentStep, firstName, selectedForStep, isOtherSelected, otherForStep])
+    return selectedForStep.length > 0 || otherForStep.trim().length > 0
+  }, [currentStep, firstName, selectedForStep, otherForStep])
 
   const toggleOption = useCallback(
     (option: string) => {
       if (currentStep === 0 || !question) return
+      if (option === 'Something else ...') {
+        otherInputRef.current?.focus()
+        return
+      }
       const key = question.key
       const multi = question.multi
       setAnswers((prev) => {
@@ -282,8 +285,23 @@ export default function OnboardingProfileScreen() {
         }
         return { ...prev, [key]: [option] }
       })
+      if (!multi) {
+        setOtherText((prev) => ({ ...prev, [key]: '' }))
+      }
     },
     [currentStep, question]
+  )
+
+  const handleOtherTextChange = useCallback(
+    (value: string) => {
+      if (!question) return
+      const key = question.key
+      setOtherText((prev) => ({ ...prev, [key]: value }))
+      if (!question.multi && value.trim().length > 0) {
+        setAnswers((prev) => ({ ...prev, [key]: [] }))
+      }
+    },
+    [question]
   )
 
   const handleContinue = () => {
@@ -380,22 +398,36 @@ export default function OnboardingProfileScreen() {
           <View className="flex-row items-center gap-4">
             <TouchableOpacity
               onPress={handleBack}
-              className="w-12 h-12 rounded-full bg-[#F3F3F3] items-center justify-center"
+              className="w-12 h-12 rounded-full bg-white items-center justify-center"
+              style={{
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.06,
+                shadowRadius: 9,
+                elevation: 2,
+              }}
             >
               <SymbolView name="chevron.left" size={20} tintColor="#000000" />
             </TouchableOpacity>
-            <View className="flex-1 h-4 bg-[#D9D9D9] rounded-full overflow-hidden">
+            <View className="flex-1 h-4 bg-secondary rounded-full overflow-hidden">
               <View
-                className="h-full rounded-full bg-primary"
+                className="h-full rounded-full overflow-hidden"
                 style={{ width: `${progressValue}%` }}
-              />
+              >
+                <LinearGradient
+                  colors={['#6ED308', '#A7EB13']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{ flex: 1 }}
+                />
+              </View>
             </View>
           </View>
 
           <View className="flex-1 pt-6">
             {isNameStep ? (
               <>
-                <Text className="text-[26px] font-extrabold tracking-tight leading-[32px] text-black">
+                <Text className="text-[26px] font-extrabold tracking-tighter leading-[32px] text-black">
                   What should I call you?
                 </Text>
                 <TextInput
@@ -414,13 +446,16 @@ export default function OnboardingProfileScreen() {
               </>
             ) : question ? (
               <>
-                <Text className="text-[26px] font-extrabold tracking-tight leading-[32px] text-black">
+                <Text className="text-[26px] font-extrabold tracking-tighter leading-[32px] text-black">
                   {question.title}
                 </Text>
 
                 <View className="mt-7 gap-3">
                   {question.options.map((option, index) => {
-                    const selected = selectedForStep.includes(option)
+                    const isOther = option === 'Something else ...'
+                    const selected = isOther
+                      ? otherForStep.trim().length > 0
+                      : selectedForStep.includes(option)
                     return (
                       <TouchableOpacity
                         key={option}
@@ -429,39 +464,44 @@ export default function OnboardingProfileScreen() {
                         activeOpacity={0.8}
                       >
                         {question.showNumbers ? (
-                          <View className="w-9 h-9 rounded-full bg-[#EFEFEF] items-center justify-center mr-3">
-                            <Text className={`text-[18px] ${selected ? 'text-primary' : 'text-black'}`}>
+                          <View
+                            className={`w-9 h-9 rounded-full items-center justify-center mr-3 ${selected ? 'bg-primary' : 'bg-[#EFEFEF]'}`}
+                          >
+                            <Text
+                              className={`text-[18px] ${selected ? 'text-white font-extrabold' : 'text-black'}`}
+                            >
                               {index + 1}
                             </Text>
                           </View>
                         ) : (
-                          <View className="w-9 h-9 rounded-full bg-[#EFEFEF] items-center justify-center mr-3">
+                          <View
+                            className={`w-9 h-9 rounded-full items-center justify-center mr-3 ${selected ? 'bg-primary' : ''}`}
+                            style={selected ? undefined : { borderWidth: 2, borderColor: '#DFE0E1' }}
+                          >
                             {selected ? (
-                              <SymbolView name="checkmark" size={16} tintColor="#6CD401" />
+                              <SymbolView name="checkmark" size={16} tintColor="#FFFFFF" weight="heavy" />
                             ) : null}
                           </View>
                         )}
-                        <Text
-                          className={`text-[19px] leading-[26px] flex-1 ${option === 'Something else ...' ? 'text-gray-400' : 'text-black'}`}
-                        >
-                          {option}
-                        </Text>
+                        {isOther ? (
+                          <TextInput
+                            ref={otherInputRef}
+                            value={otherForStep}
+                            onChangeText={handleOtherTextChange}
+                            placeholder="Something else ..."
+                            placeholderTextColor="#9CA3AF"
+                            returnKeyType="done"
+                            className="text-[19px] leading-[26px] flex-1 text-black"
+                          />
+                        ) : (
+                          <Text className="text-[19px] leading-[26px] flex-1 text-black">
+                            {option}
+                          </Text>
+                        )}
                       </TouchableOpacity>
                     )
                   })}
                 </View>
-
-                {isOtherSelected && (
-                  <TextInput
-                    value={otherForStep}
-                    onChangeText={(value) =>
-                      setOtherText((prev) => ({ ...prev, [question.key]: value }))
-                    }
-                    placeholder="Tell us more..."
-                    placeholderTextColor="#9CA3AF"
-                    className="mt-5 bg-[#F7F7F7] rounded-2xl px-4 py-3 text-black text-base"
-                  />
-                )}
               </>
             ) : null}
           </View>
@@ -470,21 +510,18 @@ export default function OnboardingProfileScreen() {
             <TouchableOpacity
               onPress={handleContinue}
               disabled={!isCurrentStepValid || submitting}
-              className="w-full py-4 rounded-full items-center justify-center"
-              style={{ backgroundColor: isCurrentStepValid ? '#F1F1F1' : '#F3F3F3', opacity: submitting ? 0.6 : 1 }}
+              className={`w-full py-4 rounded-full items-center justify-center ${isCurrentStepValid ? 'bg-primary' : 'bg-[#F3F3F3]'}`}
+              style={{ opacity: submitting ? 0.6 : 1 }}
             >
               {submitting ? (
-                <ActivityIndicator color="#000000" size="small" />
+                <ActivityIndicator color={isCurrentStepValid ? '#FFFFFF' : '#000000'} size="small" />
               ) : (
-                <Text className="text-[16px] font-semibold text-black">Continue</Text>
+                <Text
+                  className={`text-[16px] font-semibold ${isCurrentStepValid ? 'text-white' : 'text-black'}`}
+                >
+                  Continue
+                </Text>
               )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => router.replace('/(tabs)/home')}
-              className="items-center mt-4"
-            >
-              <Text className="text-[14px] text-gray-400">Skip</Text>
             </TouchableOpacity>
           </View>
         </View>
