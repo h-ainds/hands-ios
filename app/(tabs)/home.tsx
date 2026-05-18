@@ -38,23 +38,6 @@ export default function HomeScreen() {
       Alert.alert('Could not update favorites')
     }
   }
-
-  const logRecentDebug = (items: any[]) => {
-    try {
-      const preview = (items || []).slice(0, 12).map((r: any) => ({
-        id: r?.id,
-        recipe_id: r?.recipe_id,
-        title: r?.title,
-        image: r?.image,
-        viewed_at: r?.viewed_at,
-        keys: r && typeof r === 'object' ? Object.keys(r).slice(0, 20) : [],
-      }))
-      console.log('[Home][Recents] Raw recents preview:', preview)
-    } catch (e) {
-      console.log('[Home][Recents] Failed to log recents debug')
-    }
-  }
-
   // Fetch random recipes for hero and our picks
   useEffect(() => {
     async function fetchRandomRecipes() {
@@ -104,8 +87,6 @@ export default function HomeScreen() {
       }
 
       const recentList = Array.isArray(recent) ? recent : []
-      console.log('Recent recipes loaded:', recentList.length)
-      logRecentDebug(recentList)
 
       // Strict sanitization:
       // 1) keep only rows with a plausible numeric recipes.id
