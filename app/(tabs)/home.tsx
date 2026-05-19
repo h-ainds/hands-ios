@@ -217,7 +217,7 @@ export default function HomeScreen() {
 
         {/* Today Section */}
         <View className="pb-4">
-          <Text className="text-2xl font-bold tracking-tighter mb-2 px-4">
+          <Text className="text-2xl font-bold tracking-tighter mb-3 px-4">
             Today
           </Text>
           <View className="px-4">
@@ -248,7 +248,7 @@ export default function HomeScreen() {
 
         {/* Recent Recipes Section */}
         <View className="py-5">
-          <Text className="text-2xl font-bold tracking-tighter mb-2 px-4">
+          <Text className="text-2xl font-bold tracking-tighter mb-3 px-4">
             Recents
           </Text>
           {recentLoading ? (
@@ -263,19 +263,19 @@ export default function HomeScreen() {
               contentContainerClassName="gap-2.5">
               {recentRecipes && recentRecipes.length > 0 ? (
                 recentRecipes.slice(0, 10).map((recipe: Recipe) => (
-                  <View key={recipe.id}>
-                    <RecipeCard
-                      recipeId={recipe.id}
-                      title={recipe.title}
-                      image={recipe.image ?? undefined}
-                      cardType="vertical"
-                      rounded="2xl"
-                      showActionButton
-                      isFavorited={isFavorite(recipe.id)}
-                      favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
-                      onToggleFavorite={handleToggleFavorite}
-                      onPress={() => router.push(`/recipe/${recipe.id}`)}/>
-                  </View>
+                  <RecipeCard
+                    key={recipe.id}
+                    recipeId={recipe.id}
+                    title={recipe.title}
+                    image={recipe.image ?? undefined}
+                    cardType="vertical"
+                    rounded="2xl"
+                    showActionButton
+                    isFavorited={isFavorite(recipe.id)}
+                    favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
+                    onToggleFavorite={handleToggleFavorite}
+                    onPress={() => router.push(`/recipe/${recipe.id}`)}
+                  />
                 ))
               ) : (
                 <Text className="text-gray-400 text-base">
@@ -303,19 +303,19 @@ export default function HomeScreen() {
               contentContainerClassName="gap-2.5">
               {ourPicks.length > 0 ? (
                 ourPicks.map((recipe: Recipe) => (
-                  <View key={recipe.id}>
-                    <RecipeCard
-                      recipeId={recipe.id}
-                      title={recipe.title}
-                      image={recipe.image ?? undefined}
-                      cardType="vertical"
-                      rounded="xl"
-                      showActionButton
-                      isFavorited={isFavorite(recipe.id)}
-                      favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
-                      onToggleFavorite={handleToggleFavorite}
-                      onPress={() => router.push(`/recipe/${recipe.id}`)}/>
-                  </View>
+                  <RecipeCard
+                    key={recipe.id}
+                    recipeId={recipe.id}
+                    title={recipe.title}
+                    image={recipe.image ?? undefined}
+                    cardType="vertical"
+                    rounded="xl"
+                    showActionButton
+                    isFavorited={isFavorite(recipe.id)}
+                    favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
+                    onToggleFavorite={handleToggleFavorite}
+                    onPress={() => router.push(`/recipe/${recipe.id}`)}
+                  />
                 ))
               ) : (
                 <Text className="text-gray-400 text-base">
