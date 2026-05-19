@@ -1,6 +1,5 @@
-import { Image, Pressable, ActivityIndicator, ScrollView, Alert } from 'react-native'
+import { Pressable, ActivityIndicator, ScrollView, Alert } from 'react-native'
 import { Text, View } from 'react-native'
-import { LinearGradient } from 'expo-linear-gradient'
 import { useRecipes } from '@/hooks/useRecipes'
 import { useRouter } from 'expo-router'
 import { useEffect, useState, useCallback } from 'react'
@@ -203,47 +202,48 @@ export default function HomeScreen() {
   />
 </Pressable>
 
-      <ScrollView className="flex-1" contentContainerClassName="pb-20">
-        {/* Hero Section */}
-        <View className="w-full">
-          {heroLoading ? (
-            <View className="h-[54vh] bg-gray-200 justify-center items-center">
-              <ActivityIndicator size="large" />
-            </View>
-          ) : heroRecipe ? (
-            <Pressable onPress={() => router.push(`/recipe/${heroRecipe.id}`)}>
-              <View className="relative">
-                <Image
-                  source={{ uri: heroRecipe.image ?? undefined }}
-                  className="w-full h-[54vh]"
-                  resizeMode="cover"
-                />
-                {/* Gradient Overlay */}
-                <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.4)']}
-                locations={[0.5, 1]}
-                style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                top: 0,
-                bottom: 0,
-                }}
-               pointerEvents="none"
-               />
-                {/* Hero TEXT */}
-                <View className="absolute bottom-0 p-4">
-                  <Text className="text-3xl text-white font-extrabold tracking-tighter leading-none">
-                    {heroRecipe.title}
-                  </Text>
-                </View>
+      <ScrollView className="flex-1" contentContainerClassName="pb-20 pt-[110px]">
+        {/* Quick Actions */}
+        <View className="flex-row gap-3 px-4 mb-5">
+          <Pressable className="flex-1 flex-row items-center justify-center gap-1 bg-secondary rounded-full py-4 shadow-black">
+            <SymbolView name="fork.knife" size={18} weight="semibold" tintColor="#000000" />
+            <Text className="text-base font-semibold text-black">Plan meals</Text>
+          </Pressable>
+          <Pressable className="flex-1 flex-row items-center justify-center gap-1 bg-secondary rounded-full py-4">
+            <SymbolView name="cart" size={18} weight="semibold" tintColor="#000000" />
+            <Text className="text-base font-semibold text-black">Create</Text>
+          </Pressable>
+        </View>
+
+        {/* Today Section */}
+        <View className="pb-4">
+          <Text className="text-2xl font-bold tracking-tighter mb-2 px-4">
+            Today
+          </Text>
+          <View className="px-4">
+            {heroLoading ? (
+              <View className="w-full aspect-[2.38] bg-gray-200 rounded-xl justify-center items-center">
+                <ActivityIndicator size="large" />
               </View>
-            </Pressable>
-          ) : (
-            <View className="h-[56vh] bg-gray-200 justify-center items-center">
-              <Text className="text-gray-600">No recipe available</Text>
-            </View>
-          )}
+            ) : heroRecipe ? (
+              <RecipeCard
+                recipeId={heroRecipe.id}
+                title={heroRecipe.title}
+                image={heroRecipe.image ?? undefined}
+                cardType="horizontal"
+                rounded="3xl"
+                showActionButton
+                isFavorited={isFavorite(heroRecipe.id)}
+                favoriteLoading={pendingRecipeIds.has(Number(heroRecipe.id))}
+                onToggleFavorite={handleToggleFavorite}
+                onPress={() => router.push(`/recipe/${heroRecipe.id}`)}
+              />
+            ) : (
+              <View className="w-full aspect-[2.38] bg-gray-200 rounded-xl justify-center items-center">
+                <Text className="text-gray-600">No recipe available</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Recent Recipes Section */}
@@ -269,7 +269,7 @@ export default function HomeScreen() {
                       title={recipe.title}
                       image={recipe.image ?? undefined}
                       cardType="vertical"
-                      rounded="xl"
+                      rounded="2xl"
                       showActionButton
                       isFavorited={isFavorite(recipe.id)}
                       favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}

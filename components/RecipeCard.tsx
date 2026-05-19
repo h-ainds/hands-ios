@@ -22,11 +22,11 @@ interface RecipeCardProps {
 }
 
 const PlusIcon = () => (
-  <SymbolView name="plus" size={16} weight="bold" tintColor="#111827" />
+  <SymbolView name="plus" size={17} weight="semibold" tintColor="#111827" />
 )
 
 const CheckIcon = () => (
-  <SymbolView name="checkmark" size={16} weight="bold" tintColor="#16a34a" />
+  <SymbolView name="checkmark" size={17} weight="semibold" tintColor="#16a34a" />
 )
 
 export default function RecipeCard({
