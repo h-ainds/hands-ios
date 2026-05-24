@@ -36,6 +36,7 @@ module.exports = {
       },
       boxShadow: {
         hands: '0 2px 18px 0 rgba(0, 0, 0, 0.06)',
+        drop: '0 2px 15px 4px rgba(0, 0, 0, 0.1)',
       },
     },
   },

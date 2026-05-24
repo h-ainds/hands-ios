@@ -205,11 +205,11 @@ export default function HomeScreen() {
       <ScrollView className="flex-1" contentContainerClassName="pb-20 pt-[110px]">
         {/* Quick Actions */}
         <View className="flex-row gap-3 px-4 mb-5">
-          <Pressable className="flex-1 flex-row items-center justify-center gap-1 bg-secondary rounded-full py-4 shadow-black">
+          <Pressable className="flex-1 flex-row items-center justify-center gap-1 bg-white rounded-full py-4 shadow-drop">
             <SymbolView name="fork.knife" size={18} weight="semibold" tintColor="#000000" />
             <Text className="text-base font-semibold text-black">Plan meals</Text>
           </Pressable>
-          <Pressable className="flex-1 flex-row items-center justify-center gap-1 bg-secondary rounded-full py-4">
+          <Pressable className="flex-1 flex-row items-center justify-center gap-1 bg-white rounded-full py-4 shadow-drop">
             <SymbolView name="cart" size={18} weight="semibold" tintColor="#000000" />
             <Text className="text-base font-semibold text-black">Create</Text>
           </Pressable>
@@ -328,7 +328,7 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* Composer Fixed at Bottom */}
-      <View className="absolute flex-row items-center bottom-4">
+      <View className="absolute flex-row items-center bottom-4 shadow-drop">
         <Composer
           onAskPress={handleAskPress}
         />
