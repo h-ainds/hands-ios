@@ -302,22 +302,34 @@ export default function AskScreen() {
 
         {/* ── Composer — always anchored above keyboard ── */}
         <View className="px-4 pb-4">
-          {/* Attachment preview pill */}
+          {/* Attachment preview — large embedded card */}
           {attachment?.uri && (
             <View
-              className="flex-row items-center bg-gray-100 rounded-2xl px-3 py-2 mb-2 self-start"
-              style={{ maxWidth: '70%' }}
+              className="w-36 rounded-3xl overflow-hidden mb-3"
+              style={{ aspectRatio: 1 }}
             >
               <Image
                 source={{ uri: attachment.uri }}
-                className="w-10 h-10 rounded-xl"
+                className="w-full h-full"
+                resizeMode="cover"
               />
+              {/* Dismiss button — oversized, floating top-right */}
               <Pressable
                 onPress={clearAttachment}
-                className="ml-2 w-6 h-6 rounded-full bg-white items-center justify-center"
                 hitSlop={8}
+                style={{
+                  position: 'absolute',
+                  top: 10,
+                  right: 10,
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: '#FFFFFF',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
-                <SymbolView name="xmark" size={11} tintColor="#6B7280" weight="semibold" />
+                <SymbolView name="xmark" size={14} tintColor="#000000" weight="bold" />
               </Pressable>
             </View>
           )}
