@@ -200,10 +200,8 @@ export default function RecipeCard({
       return
     }
 
-    // Track the tap FIRST
     if (hasValidRecipeId) {
-      await trackRecipeCardTap(normalizedRecipeId as any)
-      console.log('Tracked tap for recipe:', normalizedRecipeId)
+      try { await trackRecipeCardTap(normalizedRecipeId as any) } catch {}
     }
 
     // Then navigate

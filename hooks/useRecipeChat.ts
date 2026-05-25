@@ -1,15 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { parseAnswerXml, ParsedAnswer } from "@/lib/parseAnswerXml";
+import { parseSegments, stripMarkers, MessageSegment } from "@/lib/parseSegments";
 import { supabase } from "@/lib/supabase/client";
+
+export type { MessageSegment };
 
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
-};
-
-export type RecipeCardData = {
-  messageIndex: number;
-  recipes: ParsedAnswer;
+  segments?: MessageSegment[];
 };
 
 export type StreamingStatus =
@@ -44,7 +42,6 @@ interface UseRecipeChatOptions {
 
 interface UseRecipeChatReturn {
   messages: ChatMessage[];
-  recipeCards: RecipeCardData[];
   status: StreamingStatus;
   error: Error | null;
   isLoading: boolean;
@@ -56,55 +53,10 @@ interface UseRecipeChatReturn {
   clearChat: () => void;
   cancelRequest: () => void;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
-  setRecipeCards: React.Dispatch<React.SetStateAction<RecipeCardData[]>>;
 }
 
-const DEFAULT_TIMEOUT = 30000; // 30 seconds
-const DEFAULT_TYPING_DELAY = 6;
-
-async function filterExistingRecipeItems(
-  items: ParsedAnswer["items"],
-): Promise<ParsedAnswer["items"]> {
-  if (!items || items.length === 0) return [];
-
-  const normalizedIds = Array.from(
-    new Set(
-      items
-        .map((item) => String(item?.id ?? "").trim())
-        .filter((id) => id.length > 0),
-    ),
-  );
-
-  if (normalizedIds.length === 0) return [];
-
-  const numericIds = normalizedIds
-    .map((id) => Number(id))
-    .filter((id) => Number.isFinite(id));
-
-  if (numericIds.length === 0) return [];
-
-  const { data, error } = await supabase
-    .from("recipes")
-    .select("id")
-    .in("id", numericIds);
-
-  if (error) {
-    console.error("[useRecipeChat] Failed to validate recipe IDs:", error);
-    return [];
-  }
-
-  const validIds = new Set((data || []).map((row) => String(row.id)));
-  const validItems = items.filter((item) => validIds.has(String(item.id)));
-
-  const droppedCount = items.length - validItems.length;
-  if (droppedCount > 0) {
-    console.warn(
-      `[useRecipeChat] Dropped ${droppedCount} invalid recipe card(s) before render/save.`,
-    );
-  }
-
-  return validItems;
-}
+const DEFAULT_TIMEOUT = 30000;
+const DEFAULT_TYPING_DELAY = 2;
 
 export function useRecipeChat(
   options: UseRecipeChatOptions = {},
@@ -116,12 +68,9 @@ export function useRecipeChat(
   } = options;
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [recipeCards, setRecipeCards] = useState<RecipeCardData[]>([]);
   const [status, setStatus] = useState<StreamingStatus>("idle");
   const [error, setError] = useState<Error | null>(null);
-  const [currentConversationId, setCurrentConversationId] = useState<
-    string | null
-  >(null);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
@@ -131,7 +80,6 @@ export function useRecipeChat(
     messagesRef.current = messages;
   }, [messages]);
 
-  // Cleanup on unmount
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -140,38 +88,63 @@ export function useRecipeChat(
     };
   }, []);
 
-  // Type out assistant text character by character
-  const typeAssistantText = useCallback(
-    async (text: string): Promise<void> => {
-      let current = "";
-
-      for (let i = 0; i < text.length; i++) {
+  const typeSegmentsInOrder = useCallback(
+    async (segs: MessageSegment[]): Promise<void> => {
+      for (const seg of segs) {
         if (!isMountedRef.current) break;
 
-        current += text[i];
-        const currentText = current;
-
-        if (isMountedRef.current) {
-          setMessages((prev) =>
-            prev.map((msg, idx) =>
-              idx === prev.length - 1 ? { ...msg, content: currentText } : msg,
-            ),
-          );
+        if (seg.type === "text") {
+          let typed = "";
+          for (let i = 0; i < seg.content.length; i++) {
+            if (!isMountedRef.current) break;
+            typed += seg.content[i];
+            const snapshot = typed;
+            setMessages((prev) => {
+              const lastIdx = prev.length - 1;
+              return prev.map((msg, idx) => {
+                if (idx !== lastIdx) return msg;
+                const existing = msg.segments || [];
+                const last = existing[existing.length - 1];
+                if (last?.type === "text") {
+                  return {
+                    ...msg,
+                    segments: [
+                      ...existing.slice(0, -1),
+                      { type: "text" as const, content: snapshot },
+                    ],
+                  };
+                }
+                return {
+                  ...msg,
+                  segments: [...existing, { type: "text" as const, content: snapshot }],
+                };
+              });
+            });
+            await new Promise((res) => setTimeout(res, typingDelay));
+          }
+        } else {
+          // Card: append immediately, brief pause so user sees it land
+          setMessages((prev) => {
+            const lastIdx = prev.length - 1;
+            return prev.map((msg, idx) =>
+              idx !== lastIdx
+                ? msg
+                : { ...msg, segments: [...(msg.segments || []), seg] },
+            );
+          });
+          await new Promise((res) => setTimeout(res, 120));
         }
-
-        await new Promise((res) => setTimeout(res, typingDelay));
       }
     },
     [typingDelay],
   );
 
-  // Save message to Supabase conversation
   const saveMessageToConversation = useCallback(
     async (
       convId: string,
       role: "user" | "assistant",
       content: string,
-      recipes?: ParsedAnswer,
+      recipes?: Array<{ id: string; title: string; image: string; caption: string }>,
     ) => {
       try {
         const { data: conv } = await supabase
@@ -182,31 +155,24 @@ export function useRecipeChat(
 
         const currentContent = conv?.content || [];
         const newMessage: any = { role, content };
-
-        if (recipes && recipes.items.length > 0) {
-          const validItems = await filterExistingRecipeItems(recipes.items);
-          if (validItems.length > 0) {
-            newMessage.recipes = validItems;
-          }
+        if (recipes && recipes.length > 0) {
+          newMessage.recipes = recipes;
         }
-
-        const newContent = [...currentContent, newMessage];
 
         await supabase
           .from("conversations")
           .update({
-            content: newContent,
+            content: [...currentContent, newMessage],
             updated_at: new Date().toISOString(),
           })
           .eq("id", convId);
-      } catch (error) {
-        console.error("Error saving message:", error);
+      } catch (err) {
+        console.error("Error saving message:", err);
       }
     },
     [],
   );
 
-  // Send message and handle streaming response
   const sendMessage = useCallback(
     async (
       message: string,
@@ -215,21 +181,16 @@ export function useRecipeChat(
     ) => {
       if (!message.trim() && !payload?.imageBase64) return;
 
-      // Cancel any existing request
       abortControllerRef.current?.abort();
       abortControllerRef.current = new AbortController();
 
       const userMessage = message.trim();
       let activeConversationId = conversationId || currentConversationId;
 
-      // Capture history BEFORE setMessages — once setMessages fires and the effect
-      // runs, messagesRef will include the new user message, making findLast() in the
-      // edge function return the current prompt instead of the previous one.
       const historySnapshot = messagesRef.current
         .slice(-6)
         .map((m) => ({ role: m.role, content: m.content }));
 
-      // Add user message and update status
       if (isMountedRef.current) {
         setMessages((prev) => [
           ...prev,
@@ -239,12 +200,9 @@ export function useRecipeChat(
         setError(null);
       }
 
-      // Create new conversation if needed
       if (!activeConversationId) {
         try {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
+          const { data: { user } } = await supabase.auth.getUser();
           if (user) {
             const { data, error } = await supabase
               .from("conversations")
@@ -265,15 +223,9 @@ export function useRecipeChat(
           console.error("Error creating conversation:", err);
         }
       } else {
-        // Save user message to existing conversation
-        await saveMessageToConversation(
-          activeConversationId,
-          "user",
-          userMessage,
-        );
+        await saveMessageToConversation(activeConversationId, "user", userMessage);
       }
 
-      // Create timeout
       const timeoutId = setTimeout(() => {
         abortControllerRef.current?.abort();
         if (isMountedRef.current) {
@@ -284,28 +236,18 @@ export function useRecipeChat(
           setStatus("error");
           setMessages((prev) => [
             ...prev,
-            {
-              role: "assistant" as const,
-              content: "Sorry, the request timed out. Please try again.",
-            },
+            { role: "assistant" as const, content: "Sorry, the request timed out. Please try again." },
           ]);
           onError?.(timeoutError);
         }
       }, timeout);
 
       try {
-        // Get the current session for authentication
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        // Build the Edge Function URL
+        const { data: { session } } = await supabase.auth.getSession();
         const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
         const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-        if (!supabaseUrl || !anonKey) {
-          throw new Error("Supabase configuration missing");
-        }
+        if (!supabaseUrl || !anonKey) throw new Error("Supabase configuration missing");
 
         const functionUrl = `${supabaseUrl}/functions/v1/streamv5`;
 
@@ -319,10 +261,7 @@ export function useRecipeChat(
           .slice(-2)
           .map((m) => m.content);
 
-        const requestBody: Record<string, unknown> = {
-          prompt: promptForModel,
-          history,
-        };
+        const requestBody: Record<string, unknown> = { prompt: promptForModel, history };
         if (isImageSend && payload?.imageBase64) {
           requestBody.context = normalizedContext || DEFAULT_IMAGE_CONTEXT;
           requestBody.imageBase64 = payload.imageBase64;
@@ -332,12 +271,11 @@ export function useRecipeChat(
           requestBody.recipeContext = payload.recipeContext;
         }
 
-        // Make POST request to streaming endpoint
         const response = await fetch(functionUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Accept: "text/plain",
+            Accept: "application/json",
             apikey: anonKey,
             Authorization: `Bearer ${session?.access_token || anonKey}`,
           },
@@ -350,138 +288,75 @@ export function useRecipeChat(
           throw new Error(`Server error (${response.status}): ${errorText}`);
         }
 
-        if (isMountedRef.current) {
-          setStatus("streaming");
-        }
+        if (isMountedRef.current) setStatus("streaming");
 
-        // Read stream as text (React Native compatible)
         const fullResponse = await response.text();
-
         clearTimeout(timeoutId);
 
         if (!isMountedRef.current) return;
 
         console.log("[Stream] Response length:", fullResponse.length);
-        console.log(
-          "[Stream] Response (first 1500 chars):",
-          fullResponse.substring(0, 1500),
-        );
+        console.log("[Stream] Response (first 500 chars):", fullResponse.substring(0, 500));
 
+        if (isMountedRef.current) setStatus("typing");
+
+        // Parse JSON payload from edge function
+        let responsePayload: { text: string; recipes: Array<{ id: string; title: string; image: string; caption: string }> }
+        try {
+          responsePayload = JSON.parse(fullResponse);
+        } catch {
+          responsePayload = { text: fullResponse || "I couldn't find any recipes for that. Try asking differently!", recipes: [] };
+        }
+
+        const { text: rawText, recipes } = responsePayload;
+        const cleanText = stripMarkers(rawText) || "I couldn't find any recipes for that. Try asking differently!";
+        const recipeMap = new Map(recipes.map(r => [r.id, r]));
+        const segments = parseSegments(rawText, recipeMap);
+
+        // Brief thinking pause — keeps the dots visible a moment longer before text appears
+        await new Promise((res) => setTimeout(res, 700));
         if (!isMountedRef.current) return;
 
+        // Add assistant message — content set upfront for history; segments built progressively
         if (isMountedRef.current) {
-          setStatus("typing");
-        }
-
-        // Strip markdown code fences if LLM wraps output in them
-        const cleanXml = fullResponse
-          .replace(/^```(?:xml)?\s*/i, "")
-          .replace(/\s*```$/i, "")
-          .trim();
-
-        // Always extract clean display text — never show raw XML
-        const extractDisplayText = (raw: string): string => {
-          // Try well-formed </text> first, then fall back to stopping at <items>
-          const m = raw.match(/<text>([\s\S]*?)(?:<\/text>|<items>)/);
-          if (m?.[1]?.trim()) return m[1].trim();
-          // Last resort: grab everything after <text> until the next tag
-          const m2 = raw.match(/<text>([^<]+)/);
-          if (m2?.[1]?.trim()) return m2[1].trim();
-          return "";
-        };
-
-        const displayText =
-          extractDisplayText(cleanXml) ||
-          "I couldn't find any recipes for that. Try asking differently!";
-
-        // Parse items for recipe cards (separate from display)
-        const parsed = parseAnswerXml(cleanXml);
-        console.log("[useRecipeChat] displayText:", displayText);
-        console.log(
-          "[useRecipeChat] Parsed items:",
-          parsed?.items?.length ?? 0,
-        );
-
-        let assistantMessageIndex = -1;
-
-        // Add empty assistant message for typing effect
-        if (isMountedRef.current) {
-          setMessages((prev) => {
-            assistantMessageIndex = prev.length;
-            return [...prev, { role: "assistant" as const, content: "" }];
-          });
-        }
-
-        // Type out ONLY the clean display text
-        await typeAssistantText(displayText);
-
-        // Add recipe cards if items were parsed
-        let validatedParsed: ParsedAnswer | null = null;
-        if (parsed?.items && parsed.items.length > 0) {
-          const validItems = await filterExistingRecipeItems(parsed.items);
-          if (validItems.length > 0) {
-            validatedParsed = { ...parsed, items: validItems };
-          }
-        }
-
-        if (validatedParsed?.items && validatedParsed.items.length > 0 && isMountedRef.current) {
-          console.log(
-            "[useRecipeChat] Adding recipe cards:",
-            validatedParsed.items.length,
-            "items",
-          );
-          setRecipeCards((prev) => [
+          setMessages((prev) => [
             ...prev,
-            {
-              messageIndex: assistantMessageIndex,
-              recipes: validatedParsed,
-            },
+            { role: "assistant" as const, content: cleanText, segments: [] as MessageSegment[] },
           ]);
         }
 
-        // Save assistant message to conversation
+        // Type segments in order: text chars then card inline, then next text chars, etc.
+        await typeSegmentsInOrder(segments);
+
+        // Save to conversation
         if (activeConversationId) {
           await saveMessageToConversation(
             activeConversationId,
             "assistant",
-            displayText,
-            validatedParsed || undefined,
+            cleanText,
+            recipes.length > 0 ? recipes : undefined,
           );
         }
 
-        if (isMountedRef.current) {
-          setStatus("idle");
-        }
+        if (isMountedRef.current) setStatus("idle");
       } catch (err) {
         clearTimeout(timeoutId);
-
         if (!isMountedRef.current) return;
 
-        // Don't treat abort as an error
         if (err instanceof Error && err.name === "AbortError") {
-          if (isMountedRef.current) {
-            setStatus("idle");
-          }
+          if (isMountedRef.current) setStatus("idle");
           return;
         }
 
-        const errorObj =
-          err instanceof Error
-            ? err
-            : new Error("An unexpected error occurred");
+        const errorObj = err instanceof Error ? err : new Error("An unexpected error occurred");
         console.error("[useRecipeChat] Error:", errorObj.message);
 
         if (isMountedRef.current) {
           setError(errorObj);
           setStatus("error");
-
-          // Add error message to chat
           setMessages((prev) => [
             ...prev,
-            {
-              role: "assistant" as const,
-              content: "Sorry, I encountered an error. Please try again.",
-            },
+            { role: "assistant" as const, content: "Sorry, I encountered an error. Please try again." },
           ]);
         }
 
@@ -490,46 +365,32 @@ export function useRecipeChat(
         clearTimeout(timeoutId);
       }
     },
-    [
-      timeout,
-      typeAssistantText,
-      onError,
-      currentConversationId,
-      saveMessageToConversation,
-    ],
+    [timeout, typeSegmentsInOrder, onError, currentConversationId, saveMessageToConversation],
   );
 
-  // Clear all chat state
   const clearChat = useCallback(() => {
     abortControllerRef.current?.abort();
     if (isMountedRef.current) {
       setMessages([]);
-      setRecipeCards([]);
       setStatus("idle");
       setError(null);
       setCurrentConversationId(null);
     }
   }, []);
 
-  // Cancel current request
   const cancelRequest = useCallback(() => {
     abortControllerRef.current?.abort();
-    if (isMountedRef.current) {
-      setStatus("idle");
-    }
+    if (isMountedRef.current) setStatus("idle");
   }, []);
 
   return {
     messages,
-    recipeCards,
     status,
     error,
-    isLoading:
-      status === "connecting" || status === "streaming" || status === "typing",
+    isLoading: status === "connecting" || status === "streaming" || status === "typing",
     sendMessage,
     clearChat,
     cancelRequest,
     setMessages,
-    setRecipeCards,
   };
 }

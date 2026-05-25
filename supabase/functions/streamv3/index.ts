@@ -335,22 +335,35 @@ function applyAnchorBoostAndFilter(
 
 function ensureGroundedAssistantText(text: string, recipes: Recipe[]): string {
   const cleaned = String(text || "").trim()
-  if (!cleaned) return "Here are some recipes you might enjoy."
-
-  const allowedTitles = recipes.map((r) => r.title).filter(Boolean)
-  if (allowedTitles.length === 0) return "Here are some recipes you might enjoy."
-
-  const lower = cleaned.toLowerCase()
-  const mentionsAnyAllowed = allowedTitles.some((t) => lower.includes(String(t).toLowerCase()))
-
-  // If it doesn't mention any of the returned recipes, replace with a grounded generic sentence.
-  // This prevents the model from saying "Try Three Meat Lasagna" when it's not in cards.
-  if (!mentionsAnyAllowed) {
-    const topTitles = allowedTitles.slice(0, 3)
-    return `Try ${topTitles.join(", ")}.`
+  if (!cleaned || recipes.length === 0) {
+    return recipes.length > 0
+      ? `Try [[recipe:${recipes[0].id}]] for a great meal.`
+      : "Here are some recipes you might enjoy."
   }
 
-  return cleaned
+  const allowedIds = new Set(recipes.map((r) => r.id))
+
+  // Check if model used any valid [[recipe:ID]] markers
+  const markerPattern = /\[\[recipe:([^\]]+)\]\]/g
+  let match
+  let hasValidMarker = false
+  while ((match = markerPattern.exec(cleaned)) !== null) {
+    if (allowedIds.has(match[1])) {
+      hasValidMarker = true
+      break
+    }
+  }
+
+  // Fallback: synthesize a response with markers if model produced none
+  if (!hasValidMarker) {
+    const top = recipes.slice(0, 2)
+    return top.map(r => `[[recipe:${r.id}]]`).join(" and ") + " are great options for you."
+  }
+
+  // Strip any markers with invalid IDs (hallucinated IDs)
+  return cleaned.replace(/\[\[recipe:([^\]]+)\]\]/g, (full, id) =>
+    allowedIds.has(id) ? full : ""
+  ).replace(/\s{2,}/g, " ").trim()
 }
 
 async function filterExistingRecipes(
@@ -522,7 +535,7 @@ async function filterRecipesByPreferences(
   }
 }
 
-// Ask LLM for a single plain-text recommendation sentence only
+// Ask LLM for a response with inline [[recipe:ID]] markers
 async function getChatText(
   apiKey: string,
   userPrompt: string,
@@ -530,14 +543,19 @@ async function getChatText(
   preferences: string[],
   photoIngredientSummary?: string,
 ): Promise<string> {
-  const recipeList = recipes.map(r => `- ${r.title}`).join("\n")
+  const recipeList = recipes.map(r => `- [${r.id}] ${r.title}`).join("\n")
   const prefContext = preferences.length > 0
     ? `\n\nUser dietary profile: ${preferences.join(", ")}.`
     : ""
   const photoContext = photoIngredientSummary
     ? `\n\nThe user shared a photo; these ingredients were identified from it: ${photoIngredientSummary}. Recipes below were matched from those ingredients (and their request). Never say you cannot see photos, images, or pictures — speak naturally as if you already understood what they have.`
     : ""
-  const systemPrompt = `You are Hands, a cooking assistant. Write 1 short sentence (under 20 words) recommending these recipes to the user. Return ONLY the sentence, no XML, no formatting.${prefContext}${photoContext}\n\nRecipes:\n${recipeList}`
+  const systemPrompt = `You are Hands, a cooking assistant. Write a natural 2–3 sentence response recommending specific recipes from the list below. When you mention a recipe, embed it inline as [[recipe:ID]] — do NOT write the recipe name separately next to the marker, the app renders a card in its place. Example: "A great choice! [[recipe:123]] is perfect for a cozy weeknight."
+
+Only use IDs from the list. Keep your response under 50 words. No XML, no formatting.${prefContext}${photoContext}
+
+Recipes:
+${recipeList}`
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -656,10 +674,9 @@ Deno.serve(async (req) => {
 
       const qaData = await qaResponse.json()
       const answer = qaData.choices?.[0]?.message?.content?.trim() ?? "I couldn't answer that. Please try again."
-      const xml = `<answer><text>${answer}</text><items></items></answer>`
 
-      return new Response(xml, {
-        headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-cache" },
+      return new Response(JSON.stringify({ text: answer, recipes: [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" },
       })
     }
 
@@ -851,8 +868,7 @@ Deno.serve(async (req) => {
           recipes = recipes.slice(0, 6)
 
           if (recipes.length === 0) {
-            const xml = `<answer><text>I couldn't find any recipes matching your request and dietary preferences. Try a different search.</text><items></items></answer>`
-            controller.enqueue(encoder.encode(xml))
+            controller.enqueue(encoder.encode(JSON.stringify({ text: "I couldn't find any recipes matching your request. Try a different search.", recipes: [] })))
             controller.close()
             return
           }
@@ -878,16 +894,15 @@ Deno.serve(async (req) => {
             console.log(`[Stream][Debug][${requestId}] Grounded assistant text:`, groundedText)
           }
 
-          const itemsXml = recipes
-            .map(r => `    <item>\n      <id>${r.id}</id>\n      <title>${r.title}</title>\n      <caption>${r.caption}</caption>\n      <image>${r.image}</image>\n    </item>`)
-            .join("\n")
-
-          const xml = `<answer><text>${groundedText}</text><items>\n${itemsXml}\n  </items></answer>`
-          controller.enqueue(encoder.encode(xml))
+          const payload = {
+            text: groundedText,
+            recipes: recipes.map(r => ({ id: r.id, title: r.title, image: r.image, caption: r.caption })),
+          }
+          controller.enqueue(encoder.encode(JSON.stringify(payload)))
           controller.close()
         } catch (error) {
           console.error("[Stream] Streaming error:", error)
-          controller.enqueue(encoder.encode(`<answer><text>Sorry, I encountered an error. Please try again.</text><items></items></answer>`))
+          controller.enqueue(encoder.encode(JSON.stringify({ text: "Sorry, I encountered an error. Please try again.", recipes: [] })))
           controller.close()
         }
       },
@@ -896,7 +911,7 @@ Deno.serve(async (req) => {
     return new Response(stream, {
       headers: {
         ...corsHeaders,
-        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
       },
@@ -905,10 +920,10 @@ Deno.serve(async (req) => {
     console.error("[Stream] Edge function error:", error)
 
     return new Response(
-      `<answer><text>Sorry, I encountered an error while searching for recipes. Please try again.</text><items></items></answer>`,
+      JSON.stringify({ text: "Sorry, I encountered an error while searching for recipes. Please try again.", recipes: [] }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
       }
     )
   }

@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
 import RevenueCatUI from 'react-native-purchases-ui'
 import ChatView from '@/components/chat/ChatView'
-import { useRecipeChat, RecipeContext } from '@/hooks/useRecipeChat'
+import { useRecipeChat, RecipeContext, type ChatMessage } from '@/hooks/useRecipeChat'
 import { useUsageTracking } from '@/hooks/useUsageTracking'
 import { supabase } from '@/lib/supabase/client'
 import BackButton from '@/components/BackButton'
@@ -44,7 +44,7 @@ export default function AskScreen() {
   const [attachment, setAttachment] = useState<Attachment | null>(null)
   const [recipeContext, setRecipeContext] = useState<Recipe | null>(null)
 
-  const { messages, recipeCards, status, isLoading, sendMessage, cancelRequest, setMessages, setRecipeCards } = useRecipeChat({
+  const { messages, status, isLoading, sendMessage, cancelRequest, setMessages } = useRecipeChat({
     timeout: 30000,
   })
 
@@ -188,72 +188,26 @@ export default function AskScreen() {
 
       if (data?.content) {
         const content = (data.content ?? []) as PersistedConversationMessage[]
-        const candidateRecipeIds = Array.from(
-          new Set(
-            content
-              .flatMap((msg) => (Array.isArray(msg?.recipes) ? msg.recipes : []))
-              .map((recipe) => String(recipe?.id ?? '').trim())
-              .filter(Boolean)
-          )
-        )
 
-        let validRecipeIdSet = new Set<string>()
-        if (candidateRecipeIds.length > 0) {
-          const numericIds = candidateRecipeIds
-            .map((id) => Number(id))
-            .filter((id) => Number.isFinite(id))
-
-          if (numericIds.length > 0) {
-            const { data: existingRecipes, error: existingRecipeError } = await supabase
-              .from('recipes')
-              .select('id')
-              .in('id', numericIds)
-
-            if (existingRecipeError) {
-              console.error('[Ask] Failed to validate conversation recipe IDs:', existingRecipeError)
-            } else {
-              validRecipeIdSet = new Set((existingRecipes ?? []).map((row) => String(row.id)))
-            }
+        // Reconstruct segments for assistant messages that have saved recipes
+        const messagesWithSegments: ChatMessage[] = content.map((msg) => {
+          if (msg.role === 'assistant' && Array.isArray(msg.recipes) && msg.recipes.length > 0) {
+            const recipeMap = new Map(
+              msg.recipes
+                .filter(r => r.id && r.title)
+                .map(r => [String(r.id), { id: String(r.id), title: r.title ?? '', image: r.image ?? '', caption: r.caption ?? '' }])
+            )
+            // Content doesn't have markers for old convos — show text then cards below
+            const segments = [
+              ...(msg.content ? [{ type: 'text' as const, content: msg.content }] : []),
+              ...Array.from(recipeMap.values()).map(r => ({ type: 'card' as const, ...r })),
+            ]
+            return { ...msg, segments }
           }
-        }
-
-        const loadedRecipeCards: any[] = []
-        let filteredInvalidCount = 0
-
-        content.forEach((msg, index) => {
-          if (msg.role !== 'assistant' || !Array.isArray(msg.recipes) || msg.recipes.length === 0) {
-            return
-          }
-
-          const validItems = msg.recipes.filter((recipe) => {
-            const rawId = String(recipe?.id ?? '').trim()
-            if (!rawId || !validRecipeIdSet.has(rawId)) {
-              filteredInvalidCount += 1
-              return false
-            }
-            return Boolean(recipe?.title)
-          })
-
-          if (validItems.length > 0) {
-            loadedRecipeCards.push({
-              messageIndex: index,
-              recipes: {
-                text: msg.content,
-                items: validItems
-              }
-            })
-          }
+          return msg
         })
 
-        if (filteredInvalidCount > 0) {
-          console.warn(
-            `[Ask] Filtered ${filteredInvalidCount} invalid recipe cards while reloading conversation ${convId}.`
-          )
-        }
-
-        // Load messages
-        setMessages(content)
-        setRecipeCards(loadedRecipeCards)
+        setMessages(messagesWithSegments)
       }
       setConversationLoaded(true)
     } catch (error) {
@@ -324,7 +278,7 @@ export default function AskScreen() {
               </Text>
             </View>
           ) : (
-            <ChatView messages={messages} isTyping={isTyping} recipeCards={recipeCards} />
+            <ChatView messages={messages} isTyping={isTyping} />
           )}
         </View>
 
