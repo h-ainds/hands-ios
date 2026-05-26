@@ -334,65 +334,63 @@ export default function AskScreen() {
             </View>
           )}
 
-          {/* Text Input Composer */}
-          <View
-            className="flex-row items-center bg-white rounded-full px-2"
-            style={{
-              height: 48,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.08,
-              shadowRadius: 8,
-              elevation: 3,
-            }}
-          >
-            {/* Camera button */}
+          {/* Composer row: floating camera button + input pill */}
+          <View className="flex-row items-center gap-2">
+
+            {/* Floating camera button */}
             <Pressable
               onPress={() => pickAttachment('camera')}
               onLongPress={openLibrarySecondary}
               disabled={isLoading}
               hitSlop={6}
-              style={{ opacity: isLoading ? 0.4 : 1, marginRight: 6 }}
+              style={{ opacity: isLoading ? 0.4 : 1 }}
             >
-              <View className="w-10 h-10 rounded-full bg-white items-center justify-center">
-                <SymbolView name="camera" size={18} tintColor="#000000" weight="semibold" />
+              <View className="w-14 h-14 rounded-full bg-white items-center justify-center shadow-drop">
+                <SymbolView name="camera.viewfinder" size={25} tintColor="#000000" weight="semibold" />
               </View>
             </Pressable>
 
-            {/* Text input */}
-            <TextInput
-              value={input}
-              onChangeText={setInput}
-              placeholder="Ask"
-              placeholderTextColor="#9F9F9F"
-              className="flex-1 text-black"
-              style={{ fontSize: 16, paddingVertical: 0, lineHeight: 18 }}
-              returnKeyType="send"
-              onSubmitEditing={handleSubmit}
-              editable={!isLoading}
-              autoFocus={!conversationId}
-              blurOnSubmit={false}
-            />
-
-            {/* Submit button — always visible, muted or green */}
-            <Pressable
-              onPress={handleSubmit}
-              disabled={isLoading}
-              hitSlop={6}
-              style={{ marginLeft: 6, opacity: isLoading ? 0.4 : 1 }}
+            {/* Input pill */}
+            <View
+              className="flex-1 flex-row items-center bg-white rounded-full pl-4 pr-2 shadow-drop"
+              style={{ height: 48 }}
             >
-              <View
-                className="w-10 h-10 rounded-full items-center justify-center"
-                style={{ backgroundColor: hasContent ? '#6CD401' : '#F7F7F7' }}
+              {/* Text input */}
+              <TextInput
+                value={input}
+                onChangeText={setInput}
+                placeholder="Ask"
+                placeholderTextColor="#9F9F9F"
+                className="flex-1 text-black"
+                style={{ fontSize: 16, paddingVertical: 2, lineHeight: 18 }}
+                returnKeyType="send"
+                onSubmitEditing={handleSubmit}
+                editable={!isLoading}
+                autoFocus={!conversationId}
+                blurOnSubmit={false}
+              />
+
+              {/* Submit button — always visible, muted or active */}
+              <Pressable
+                onPress={handleSubmit}
+                disabled={isLoading}
+                hitSlop={6}
+                style={{ marginLeft: 6, opacity: isLoading ? 0.4 : 1 }}
               >
-                <SymbolView
-                  name="arrow.up"
-                  size={18}
-                  tintColor={hasContent ? '#FFFFFF' : '#B2B2B2'}
-                  weight="semibold"
-                />
-              </View>
-            </Pressable>
+                <View
+                  className="w-10 h-10 rounded-full items-center justify-center"
+                  style={{ backgroundColor: hasContent ? '#6CD401' : '#F7F7F7' }}
+                >
+                  <SymbolView
+                    name="arrow.up"
+                    size={18}
+                    tintColor={hasContent ? '#FFFFFF' : '#B2B2B2'}
+                    weight="semibold"
+                  />
+                </View>
+              </Pressable>
+            </View>
+
           </View>
 
           {/* Streaming status hint */}
