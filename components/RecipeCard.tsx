@@ -448,7 +448,7 @@ export default function RecipeCard({
               onPress={handleAddToFavorites}
             >
               <Text className="text-lg font-semibold text-black">
-                Add to Favorites
+                {showAddedState ? 'Remove from Favorites' : 'Add to Favorites'}
               </Text>
             </Pressable>
 

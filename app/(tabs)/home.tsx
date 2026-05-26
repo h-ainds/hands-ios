@@ -182,7 +182,7 @@ export default function HomeScreen() {
   className="absolute w-12 h-12 rounded-full bg-white items-center justify-center z-50 left-4 top-[50px] shadow-hands"
 >
   <SymbolView
-    name="message"
+    name="clock.arrow.trianglehead.counterclockwise.rotate.90"
     size={23}
     weight="semibold"
     tintColor="#000000"
