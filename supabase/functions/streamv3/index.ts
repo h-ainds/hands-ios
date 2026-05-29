@@ -545,40 +545,36 @@ async function getChatText(
 ): Promise<string> {
   const recipeList = recipes.map(r => `- [${r.id}] ${r.title}`).join("\n")
   const prefContext = preferences.length > 0
-    ? `\n\nUser dietary profile: ${preferences.join(", ")}.`
+    ? `\nUser dietary profile: ${preferences.join(", ")}.`
     : ""
   const photoContext = photoIngredientSummary
-    ? `\n\nThe user shared a photo; these ingredients were identified from it: ${photoIngredientSummary}. Recipes below were matched from those ingredients (and their request). Never say you cannot see photos, images, or pictures — speak naturally as if you already understood what they have.`
+    ? `\nThe user shared a photo; ingredients identified: ${photoIngredientSummary}. Speak naturally as if you already understood what they have.`
     : ""
-  const systemPrompt = `You are Hands, a cooking assistant. Write a natural 2–3 sentence response recommending specific recipes from the list below. When you mention a recipe, embed it inline as [[recipe:ID]] — do NOT write the recipe name separately next to the marker, the app renders a card in its place. Example: "A great choice! [[recipe:123]] is perfect for a cozy weeknight."
 
-Only use IDs from the list. Keep your response under 50 words. No XML, no formatting.${prefContext}${photoContext}
+  const input = `Recipes:\n${recipeList}${prefContext}${photoContext}\n\nUser: ${userPrompt}`
 
-Recipes:
-${recipeList}`
-
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
-      stream: false,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
+      model: "gpt-5.4-mini",
+      prompt: {
+        id: "pmpt_6a01fd9739208195a2b9ea57f024ee940ea816dc5acb9575",
+        version: "1",
+      },
+      input,
     }),
   })
 
   if (!response.ok) {
-    throw new Error(`OpenAI Chat API error: ${await response.text()}`)
+    throw new Error(`OpenAI Responses API error: ${await response.text()}`)
   }
 
   const data = await response.json()
-  return data.choices?.[0]?.message?.content?.trim() ?? "Here are some recipes you might enjoy."
+  return data.output?.[0]?.content?.[0]?.text?.trim() ?? "Here are some recipes you might enjoy."
 }
 
 Deno.serve(async (req) => {
