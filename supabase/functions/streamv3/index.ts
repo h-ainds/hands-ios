@@ -19,7 +19,7 @@ interface RecipeContext {
 
 interface RequestBody {
   prompt: string
-  history?: string[] // last 2 user messages, oldest first
+  history?: string[]
   imageBase64?: string
   mimeType?: string
   recipeContext?: RecipeContext
@@ -30,6 +30,40 @@ interface VisionIngredient {
   category: string
   confidence: "high" | "medium" | "low"
 }
+
+interface Recipe {
+  id: string
+  title: string
+  caption: string
+  image: string
+}
+
+// ── Tool definition ──────────────────────────────────────────────────────────
+
+const SEARCH_RECIPE_TOOL = {
+  type: "function",
+  name: "search_recipes",
+  description:
+    "Search the recipe database for recipes matching the user's request. " +
+    "Call this before recommending any recipes.",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description:
+          "What to search for — dish name, ingredients, cuisine, cooking method, dietary needs, etc.",
+      },
+      count: {
+        type: "number",
+        description: "Number of recipes to retrieve (default 5, max 8)",
+      },
+    },
+    required: ["query"],
+  },
+}
+
+// ── Vision ───────────────────────────────────────────────────────────────────
 
 const VISION_ANALYZE_SYSTEM = `You are a kitchen assistant that identifies ingredients from photos.
 
@@ -52,20 +86,14 @@ Return a JSON object with this exact shape:
       "confidence": "high" | "medium" | "low"
     }
   ]
-}
-`.trim()
+}`.trim()
 
 function parseVisionIngredientsJson(content: string): VisionIngredient[] {
   const start = content.indexOf("{")
   const end = content.lastIndexOf("}")
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error("No JSON object found in vision response")
-  }
-  const jsonString = content.slice(start, end + 1)
-  const parsed = JSON.parse(jsonString) as { ingredients?: unknown }
-  if (!parsed || !Array.isArray(parsed.ingredients)) {
-    throw new Error("Invalid JSON structure: missing ingredients array")
-  }
+  if (start === -1 || end === -1 || end <= start) throw new Error("No JSON in vision response")
+  const parsed = JSON.parse(content.slice(start, end + 1)) as { ingredients?: unknown }
+  if (!Array.isArray(parsed.ingredients)) throw new Error("Missing ingredients array")
   return parsed.ingredients
     .filter(
       (item): item is VisionIngredient =>
@@ -82,24 +110,19 @@ function parseVisionIngredientsJson(content: string): VisionIngredient[] {
     }))
 }
 
-/** Same vision task as analyze-image; results feed the shared RAG pipeline (embed + ingredient RPC + RRF). */
 async function extractIngredientsFromPhoto(
   apiKey: string,
   imageBase64: string,
   mimeType: VisionMimeType,
   userHint: string,
 ): Promise<VisionIngredient[]> {
-  const imageUrl = `data:${mimeType};base64,${imageBase64}`
   const hint = userHint.trim()
-    ? `\n\nUser note (hints only — still list only ingredients you actually see in the image): ${userHint.trim()}`
+    ? `\n\nUser note (hints only — still list only ingredients you actually see): ${userHint.trim()}`
     : ""
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "gpt-4.1-mini",
       messages: [
@@ -107,13 +130,10 @@ async function extractIngredientsFromPhoto(
         {
           role: "user",
           content: [
-            {
-              type: "text",
-              text: `Here is the image. Identify the ingredients following the instructions.${hint}`,
-            },
+            { type: "text", text: `Identify the ingredients in this image.${hint}` },
             {
               type: "image_url",
-              image_url: { url: imageUrl, detail: "auto" },
+              image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: "auto" },
             },
           ],
         },
@@ -122,112 +142,36 @@ async function extractIngredientsFromPhoto(
     }),
   })
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "Unknown error")
-    throw new Error(`Vision API error (${response.status}): ${errorText.slice(0, 300)}`)
-  }
-
+  if (!response.ok) throw new Error(`Vision API error (${response.status})`)
   const data = await response.json()
   const content = data.choices?.[0]?.message?.content
-  if (!content || typeof content !== "string") {
-    throw new Error("Vision API returned an empty response")
-  }
-
+  if (!content || typeof content !== "string") throw new Error("Empty vision response")
   return parseVisionIngredientsJson(content)
 }
 
-// Raw response from match_recipes RPC
-interface MatchRecipeRow {
-  recipe_id: string
-  similarity: number
+function buildPhotoContext(ingredients: VisionIngredient[]): string | undefined {
+  const names = ingredients.map((i) => i.name.trim()).filter(Boolean)
+  return names.length > 0 ? names.join(", ") : undefined
 }
 
-// Raw response from search_recipes_by_ingredients RPC
-interface IngredientSearchRow {
-  recipe_id: string
-  rank: number
+// ── RAG ──────────────────────────────────────────────────────────────────────
+
+async function generateEmbedding(text: string, apiKey: string): Promise<number[]> {
+  const response = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "text-embedding-ada-002", input: text }),
+  })
+  if (!response.ok) throw new Error(`Embedding API error: ${await response.text()}`)
+  const data = await response.json()
+  return data.data[0].embedding
 }
 
-// Transformed recipe for XML output
-interface Recipe {
-  id: string
-  title: string
-  caption: string
-  image: string
-  tags?: string[]
-}
-
-type RecipeMetadataRow = {
-  id: number
-  title: string | null
-  caption: string | null
-  image: string | null
-  tags?: string[] | null
-}
-
-function normalizeQueryText(s: string): string {
-  return String(s || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-}
-
-function tokenize(s: string): string[] {
-  const normalized = normalizeQueryText(s)
-  if (!normalized) return []
-  return normalized.split(" ").filter(Boolean)
-}
-
-function looksLikeRecipeTitleQuery(prompt: string): boolean {
-  const tokens = tokenize(prompt)
-  if (tokens.length === 0) return false
-  // Short queries with mostly content words are often direct title intents.
-  if (tokens.length <= 6) return true
-  // If the query contains quotes, treat as title-like.
-  if (prompt.includes('"') || prompt.includes("'")) return true
-  return false
-}
-
-function getAnchorTerms(prompt: string): string[] {
-  const stop = new Set([
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "but",
-    "by",
-    "for",
-    "from",
-    "fresh",
-    "how",
-    "i",
-    "in",
-    "is",
-    "it",
-    "me",
-    "of",
-    "on",
-    "or",
-    "recipe",
-    "the",
-    "to",
-    "try",
-    "with",
-    "want",
-    "make",
-  ])
-  return tokenize(prompt)
-    .filter((t) => t.length >= 5 && !stop.has(t))
-    .slice(0, 6)
-}
-
-function containsAny(haystack: string, needles: string[]): boolean {
-  const h = normalizeQueryText(haystack)
-  return needles.some((n) => n && h.includes(n))
+function reciprocalRankFusionIds(vectorIds: string[], ingredientIds: string[], k = 60): string[] {
+  const scores = new Map<string, number>()
+  vectorIds.forEach((id, i) => scores.set(id, (scores.get(id) ?? 0) + 1 / (k + i + 1)))
+  ingredientIds.forEach((id, i) => scores.set(id, (scores.get(id) ?? 0) + 1 / (k + i + 1)))
+  return Array.from(scores.entries()).sort((a, b) => b[1] - a[1]).map(([id]) => id)
 }
 
 async function fetchRecipeMetadataByIds(
@@ -235,692 +179,292 @@ async function fetchRecipeMetadataByIds(
   ids: string[],
 ): Promise<Map<string, Recipe>> {
   const normalized = Array.from(new Set(ids.map((id) => String(id).trim()).filter(Boolean)))
-  const numericIds = normalized.map((id) => Number(id)).filter((id) => Number.isFinite(id))
-
+  const numericIds = normalized.map(Number).filter(Number.isFinite)
   if (numericIds.length === 0) return new Map()
 
   const { data, error } = await supabaseAdmin
     .from("recipes")
-    .select("id,title,caption,image,tags")
+    .select("id,title,caption,image")
     .in("id", numericIds)
 
-  if (error) {
-    console.error("[Stream] Failed fetching recipes metadata from recipes:", error.message)
-    return new Map()
-  }
+  if (error) return new Map()
 
-  const rows = (data || []) as RecipeMetadataRow[]
   const map = new Map<string, Recipe>()
-  rows.forEach((row) => {
+  for (const row of (data ?? []) as { id: number; title: string | null; caption: string | null; image: string | null }[]) {
     map.set(String(row.id), {
       id: String(row.id),
-      title: row.title || "Untitled Recipe",
-      caption: row.caption || "",
-      image: row.image || "",
-      tags: Array.isArray(row.tags) ? row.tags : [],
+      title: row.title ?? "Untitled Recipe",
+      caption: row.caption ?? "",
+      image: row.image ?? "",
     })
-  })
+  }
   return map
 }
 
-async function titleLexicalCandidates(
+async function executeSearch(
+  query: string,
+  count: number,
   supabaseAdmin: ReturnType<typeof createClient>,
-  userPrompt: string,
-  limit = 10,
-): Promise<string[]> {
-  const q = userPrompt.trim()
-  if (!q) return []
-
-  // 1) Exact-ish substring title match
-  const { data: byTitle } = await supabaseAdmin
-    .from("recipes")
-    .select("id,title")
-    .ilike("title", `%${q}%`)
-    .limit(limit)
-
-  const idsFromTitle = (byTitle || []).map((r: any) => String(r.id))
-
-  // 2) Full-text search on searchable_title if available (tsvector)
-  // Note: if the column isn't configured for text search, Supabase will error; treat as optional.
-  let idsFromFts: string[] = []
-  try {
-    const { data: byFts } = await supabaseAdmin
-      .from("recipes")
-      .select("id")
-      .textSearch("searchable_title", q, { type: "websearch" })
-      .limit(limit)
-    idsFromFts = (byFts || []).map((r: any) => String(r.id))
-  } catch (e) {
-    // Non-fatal; some environments may not support textSearch on this column.
-  }
-
-  return Array.from(new Set([...idsFromTitle, ...idsFromFts])).filter(Boolean).slice(0, limit)
-}
-
-function applyAnchorBoostAndFilter(
-  prompt: string,
-  recipes: Recipe[],
-): Recipe[] {
-  const anchors = getAnchorTerms(prompt)
-  if (anchors.length === 0) return recipes
-
-  // Only activate if at least one recipe matches at least one anchor (avoid destructive filtering).
-  const anyAnchorMatch = recipes.some((r) =>
-    containsAny(`${r.title} ${r.caption} ${(r.tags || []).join(" ")}`, anchors),
-  )
-  if (!anyAnchorMatch) return recipes
-
-  // Score: +2 for each anchor hit in title, +1 in tags, +0.5 in caption.
-  const scored = recipes.map((r) => {
-    const titleText = normalizeQueryText(r.title)
-    const captionText = normalizeQueryText(r.caption)
-    const tagsText = normalizeQueryText((r.tags || []).join(" "))
-    let score = 0
-    anchors.forEach((a) => {
-      if (titleText.includes(a)) score += 2
-      if (tagsText.includes(a)) score += 1
-      if (captionText.includes(a)) score += 0.5
-    })
-    return { r, score }
-  })
-
-  // Conservative filter: drop only recipes with 0 anchor score IF doing so still leaves results.
-  const withSignal = scored.filter((x) => x.score > 0)
-  const filtered = withSignal.length > 0 ? withSignal : scored
-
-  return filtered
-    .sort((a, b) => b.score - a.score)
-    .map((x) => x.r)
-}
-
-function ensureGroundedAssistantText(text: string, recipes: Recipe[]): string {
-  const cleaned = String(text || "").trim()
-  if (!cleaned || recipes.length === 0) {
-    return recipes.length > 0
-      ? `Try [[recipe:${recipes[0].id}]] for a great meal.`
-      : "Here are some recipes you might enjoy."
-  }
-
-  const allowedIds = new Set(recipes.map((r) => r.id))
-
-  // Check if model used any valid [[recipe:ID]] markers
-  const markerPattern = /\[\[recipe:([^\]]+)\]\]/g
-  let match
-  let hasValidMarker = false
-  while ((match = markerPattern.exec(cleaned)) !== null) {
-    if (allowedIds.has(match[1])) {
-      hasValidMarker = true
-      break
-    }
-  }
-
-  // Fallback: synthesize a response with markers if model produced none
-  if (!hasValidMarker) {
-    const top = recipes.slice(0, 2)
-    return top.map(r => `[[recipe:${r.id}]]`).join(" and ") + " are great options for you."
-  }
-
-  // Strip any markers with invalid IDs (hallucinated IDs)
-  return cleaned.replace(/\[\[recipe:([^\]]+)\]\]/g, (full, id) =>
-    allowedIds.has(id) ? full : ""
-  ).replace(/\s{2,}/g, " ").trim()
-}
-
-async function filterExistingRecipes(
-  supabaseAdmin: ReturnType<typeof createClient>,
-  recipeIds: string[],
-): Promise<string[]> {
-  if (!recipeIds.length) return []
-
-  const normalizedIds = Array.from(new Set(recipeIds.map((id) => String(id).trim()).filter(Boolean)))
-  const numericIds = normalizedIds.map((id) => Number(id)).filter((id) => Number.isFinite(id))
-
-  if (numericIds.length === 0) {
-    console.warn("[Stream] No numeric recipe IDs returned from retrieval; dropping all cards.")
-    return []
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("recipes")
-    .select("id")
-    .in("id", numericIds)
-
-  if (error) {
-    console.error("[Stream] Failed validating retrieved recipe IDs:", error.message)
-    return []
-  }
-
-  const validIdSet = new Set((data || []).map((row) => String(row.id)))
-  const filtered = normalizedIds.filter((id) => validIdSet.has(String(id)))
-  const droppedCount = normalizedIds.length - filtered.length
-
-  if (droppedCount > 0) {
-    const droppedIds = normalizedIds.filter((id) => !validIdSet.has(id)).slice(0, 10)
-    console.warn(
-      `[Stream] Dropped ${droppedCount} invalid candidate IDs not present in recipes: ${droppedIds.join(", ")}`,
-    )
-  }
-
-  return filtered
-}
-
-async function generateEmbedding(text: string, apiKey: string): Promise<number[]> {
-  const response = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "text-embedding-ada-002",
-      input: text,
-    }),
-  })
-
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`OpenAI API error: ${error}`)
-  }
-
-  const data = await response.json()
-  return data.data[0].embedding
-}
-
-function extractVectorCandidateIds(rows: MatchRecipeRow[]): string[] {
-  return (rows || [])
-    .filter((row) => row.similarity >= 0.3)
-    .map((row) => String(row.recipe_id).trim())
-    .filter(Boolean)
-}
-
-// Non-fatal wrapper around ingredient search RPC
-async function searchByIngredients(
-  supabaseAdmin: ReturnType<typeof createClient>,
-  prompt: string,
-  matchCount: number
-): Promise<IngredientSearchRow[]> {
-  const { data, error } = await supabaseAdmin.rpc("search_recipes_by_ingredients", {
-    search_query: prompt,
-    match_count: matchCount,
-  })
-  if (error) {
-    console.error("[Stream] Ingredient search error:", error.message)
-    return []
-  }
-  return data || []
-}
-
-// Merge vector search and ingredient search results using Reciprocal Rank Fusion.
-// Recipes appearing in both lists get a score boost — best of both worlds.
-// k=60 is the standard RRF constant.
-function reciprocalRankFusionIds(
-  vectorIds: string[],
-  ingredientIds: string[],
-  k = 60,
-): string[] {
-  const scores = new Map<string, number>()
-
-  vectorIds.forEach((id, i) => {
-    const key = String(id)
-    scores.set(key, (scores.get(key) ?? 0) + 1 / (k + i + 1))
-  })
-
-  ingredientIds.forEach((id, i) => {
-    const key = String(id)
-    scores.set(key, (scores.get(key) ?? 0) + 1 / (k + i + 1))
-  })
-
-  return Array.from(scores.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([id]) => id)
-}
-
-// Post-retrieval dietary filter: embedding retrieval is soft and cannot enforce
-// dietary restrictions (e.g. "Chicken pasta bake" ranks highly for "pasta recipes"
-// regardless of query enrichment). This LLM filter is the only reliable approach.
-async function filterRecipesByPreferences(
-  apiKey: string,
-  recipes: Recipe[],
-  preferences: string[]
+  openaiApiKey: string,
 ): Promise<Recipe[]> {
-  if (preferences.length === 0) return recipes
+  const capped = Math.min(count, 8)
+  const fetchCount = capped * 2
 
-  const recipeList = recipes
-    .map(r => `${r.id}: ${r.title} — ${r.caption}`)
-    .join("\n")
+  const embedding = await generateEmbedding(query, openaiApiKey)
 
-  const prefText = preferences.join(", ")
+  const [vectorResult, ingredientResult] = await Promise.all([
+    supabaseAdmin.rpc("match_recipes", { query_embedding: embedding, match_count: fetchCount }),
+    supabaseAdmin
+      .rpc("search_recipes_by_ingredients", { search_query: query, match_count: fetchCount })
+      .catch(() => ({ data: null, error: null })),
+  ])
+
+  if (vectorResult.error) throw new Error(`Vector search failed: ${vectorResult.error.message}`)
+
+  const vectorIds = ((vectorResult.data ?? []) as { recipe_id: string; similarity: number }[])
+    .filter((row) => row.similarity >= 0.3)
+    .map((row) => String(row.recipe_id))
+
+  const ingredientIds = ((ingredientResult.data ?? []) as { recipe_id: string }[])
+    .map((row) => String(row.recipe_id))
+    .filter(Boolean)
+
+  const mergedIds = reciprocalRankFusionIds(vectorIds, ingredientIds).slice(0, capped)
+  const metadataMap = await fetchRecipeMetadataByIds(supabaseAdmin, mergedIds)
+  return mergedIds.map((id) => metadataMap.get(id)).filter(Boolean) as Recipe[]
+}
+
+// ── LLM ──────────────────────────────────────────────────────────────────────
+
+async function runQA(
+  apiKey: string,
+  recipeContext: RecipeContext,
+  question: string,
+): Promise<string> {
+  const ingredientLines = recipeContext.ingredients
+    ? Object.entries(recipeContext.ingredients)
+        .flatMap(([group, items]) =>
+          (items ?? []).map((i) => (group === "Ingredients" ? i : `${i} (${group})`)),
+        )
+        .join(", ")
+    : ""
+
+  const recipeText = [
+    `Title: ${recipeContext.title}`,
+    recipeContext.caption ? `About: ${recipeContext.caption}` : "",
+    recipeContext.tags?.length ? `Tags: ${recipeContext.tags.join(", ")}` : "",
+    ingredientLines ? `Ingredients: ${ingredientLines}` : "",
+    recipeContext.steps?.length
+      ? `Steps:\n${recipeContext.steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
+      : "",
+  ].filter(Boolean).join("\n")
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "gpt-4o-mini",
-      stream: false,
       messages: [
         {
           role: "system",
-          content: `You are a strict dietary compliance checker. Given a list of recipes and a user's dietary preferences, return ONLY the IDs of recipes that comply with ALL of the user's dietary restrictions. Be strict — if a recipe title or description suggests ingredients that violate any restriction, exclude it. Return a JSON array of ID strings only, with no explanation. Example: ["123", "456"]`,
+          content: `You are a helpful cooking assistant. Answer questions about the following recipe concisely. Keep answers under 3 sentences unless detail is truly needed.\n\n${recipeText}`,
         },
+        { role: "user", content: question },
+      ],
+    }),
+  })
+
+  const data = await response.json()
+  return data.choices?.[0]?.message?.content?.trim() ?? "I couldn't answer that. Please try again."
+}
+
+async function runChat(
+  apiKey: string,
+  userMessage: string,
+  preferences: string[],
+  photoContext: string | undefined,
+  supabaseAdmin: ReturnType<typeof createClient>,
+): Promise<{ text: string; recipes: Recipe[] }> {
+  const instructionParts = [
+    "When recommending recipes, call the search_recipes tool first to retrieve real options from our database.",
+    "After receiving search results, write a warm, concise 2–3 sentence response.",
+    "Reference each recipe using [[recipe:ID]] inline — the app renders a card there.",
+    "Example: 'You should try [[recipe:3004]] for a cozy weeknight dinner.'",
+    "Only use IDs returned by the tool. Do not write the recipe name next to the marker.",
+  ]
+  if (preferences.length > 0) {
+    instructionParts.push(
+      `User dietary profile: ${preferences.join(", ")}. Incorporate into your search query naturally.`,
+    )
+  }
+  if (photoContext) {
+    instructionParts.push(
+      `The user shared a photo. Ingredients identified: ${photoContext}. Speak naturally — say 'with what you have'.`,
+    )
+  }
+  const instructions = instructionParts.join("\n")
+
+  // Turn 1: model decides whether to call the tool
+  const turn1Res = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "gpt-5.4-mini",
+      prompt: { id: "pmpt_6a01fd9739208195a2b9ea57f024ee940ea816dc5acb9575", version: "1" },
+      instructions,
+      tools: [SEARCH_RECIPE_TOOL],
+      tool_choice: "auto",
+      input: userMessage,
+    }),
+  })
+
+  if (!turn1Res.ok) throw new Error(`Responses API error (turn 1): ${await turn1Res.text()}`)
+
+  const turn1 = await turn1Res.json()
+  const turn1Output = turn1.output?.[0]
+
+  // Conversational turn — no tool call needed
+  if (!turn1Output || turn1Output.type !== "function_call") {
+    return {
+      text: turn1Output?.content?.[0]?.text ?? "I can help you find recipes. What are you looking for?",
+      recipes: [],
+    }
+  }
+
+  // Execute the search
+  const args = JSON.parse(turn1Output.arguments ?? "{}")
+  const query: string = typeof args.query === "string" ? args.query : userMessage
+  const count: number = typeof args.count === "number" ? args.count : 5
+  const recipes = await executeSearch(query, count, supabaseAdmin, apiKey)
+
+  const toolOutput = recipes.length > 0
+    ? JSON.stringify(recipes.map((r) => ({ id: r.id, title: r.title, caption: r.caption })))
+    : "No matching recipes found."
+
+  // Turn 2: generate the final response with [[recipe:ID]] markers
+  const turn2Res = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "gpt-5.4-mini",
+      previous_response_id: turn1.id,
+      instructions:
+        "Write a warm, concise 2–3 sentence response using [[recipe:ID]] inline markers for each recipe you mention. " +
+        "Do not write the recipe name next to the marker — the app renders a card there. " +
+        "Only use IDs from the search results.",
+      input: [
         {
-          role: "user",
-          content: `User dietary preferences: ${prefText}\n\nRecipes:\n${recipeList}\n\nReturn JSON array of compliant recipe IDs:`,
+          type: "function_call_output",
+          call_id: turn1Output.call_id,
+          output: toolOutput,
         },
       ],
     }),
   })
 
-  if (!response.ok) {
-    console.error("[Stream] Dietary filter API error:", await response.text())
-    return recipes // fall back to unfiltered if the call fails
-  }
+  if (!turn2Res.ok) throw new Error(`Responses API error (turn 2): ${await turn2Res.text()}`)
 
-  const data = await response.json()
-  const content = data.choices?.[0]?.message?.content?.trim() ?? "[]"
-  console.log("[Stream] Dietary filter raw LLM response:", content)
+  const turn2 = await turn2Res.json()
+  const text = turn2.output?.[0]?.content?.[0]?.text?.trim() ?? "Here are some recipes you might enjoy."
 
-  try {
-    // Strip markdown fences in case the model wraps the JSON
-    const clean = content.replace(/```json|```/g, "").trim()
-    const ids: string[] = JSON.parse(clean).map(String)
-    const filtered = recipes.filter(r => ids.includes(String(r.id)))
-    console.log(`[Stream] Dietary filter: ${recipes.length} → ${filtered.length} recipes`)
-    return filtered.length > 0 ? filtered : recipes // fallback if filter is too aggressive
-  } catch {
-    console.error("[Stream] Failed to parse dietary filter response:", content)
-    return recipes
-  }
+  return { text, recipes }
 }
 
-// Ask LLM for a response with inline [[recipe:ID]] markers
-async function getChatText(
-  apiKey: string,
-  userPrompt: string,
-  recipes: Recipe[],
-  preferences: string[],
-  photoIngredientSummary?: string,
-): Promise<string> {
-  const recipeList = recipes.map(r => `- [${r.id}] ${r.title}`).join("\n")
-  const prefContext = preferences.length > 0
-    ? `\nUser dietary profile: ${preferences.join(", ")}.`
-    : ""
-  const photoContext = photoIngredientSummary
-    ? `\nThe user shared a photo; ingredients identified: ${photoIngredientSummary}. Speak naturally as if you already understood what they have.`
-    : ""
-
-  const input = `Recipes:\n${recipeList}${prefContext}${photoContext}\n\nUser: ${userPrompt}`
-
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-5.4-mini",
-      prompt: {
-        id: "pmpt_6a01fd9739208195a2b9ea57f024ee940ea816dc5acb9575",
-        version: "1",
-      },
-      input,
-    }),
-  })
-
-  if (!response.ok) {
-    throw new Error(`OpenAI Responses API error: ${await response.text()}`)
-  }
-
-  const data = await response.json()
-  return data.output?.[0]?.content?.[0]?.text?.trim() ?? "Here are some recipes you might enjoy."
-}
+// ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders })
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
 
   try {
     if (req.method !== "POST") {
       return new Response(
         JSON.stringify({ error: "Method not allowed" }),
-        { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       )
     }
 
-    // Get environment variables
     const openaiKey = Deno.env.get("OPENAI_API_KEY")
     const supabaseUrl = Deno.env.get("SUPABASE_URL")
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")
 
-    if (!openaiKey) {
-      throw new Error("OPENAI_API_KEY not configured")
-    }
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error("Supabase credentials not configured")
-    }
+    if (!openaiKey) throw new Error("OPENAI_API_KEY not configured")
+    if (!supabaseUrl || !supabaseServiceKey) throw new Error("Supabase credentials not configured")
 
-    const authHeader = req.headers.get("Authorization")
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
-
-    // Resolve authenticated user
-    let userId: string | null = null
-    if (authHeader && authHeader !== `Bearer ${supabaseAnonKey}`) {
-      const token = authHeader.replace("Bearer ", "")
-      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
-      if (!authError && user) {
-        userId = user.id
-        console.log("[Stream] Authenticated user:", userId)
-      } else {
-        console.log("[Stream] Auth failed or anonymous:", authError?.message)
-      }
-    } else {
-      console.log("[Stream] No user token — running without personalization")
-    }
-
     const body = (await req.json()) as RequestBody
     const { prompt, imageBase64, mimeType, recipeContext } = body
 
     if (!prompt || typeof prompt !== "string") {
       return new Response(
         JSON.stringify({ error: "Invalid prompt" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       )
     }
 
-    // Recipe Q&A mode — skip retrieval entirely, answer about the specific recipe
+    // Q&A shortcut — answer about a specific recipe, no retrieval
     if (recipeContext) {
-      console.log("[Stream] Mode: recipe-qa, recipe:", recipeContext.title)
-
-      const ingredientLines = recipeContext.ingredients
-        ? Object.entries(recipeContext.ingredients)
-            .flatMap(([group, items]) => (items ?? []).map(i => group === "Ingredients" ? i : `${i} (${group})`))
-            .join(", ")
-        : ""
-
-      const recipeText = [
-        `Title: ${recipeContext.title}`,
-        recipeContext.caption ? `About: ${recipeContext.caption}` : "",
-        recipeContext.tags?.length ? `Tags: ${recipeContext.tags.join(", ")}` : "",
-        ingredientLines ? `Ingredients: ${ingredientLines}` : "",
-        recipeContext.steps?.length
-          ? `Steps:\n${recipeContext.steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
-          : "",
-      ].filter(Boolean).join("\n")
-
-      const qaResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          stream: false,
-          messages: [
-            {
-              role: "system",
-              content: `You are a helpful cooking assistant. Answer questions about the following recipe concisely and helpfully. Keep answers under 3 sentences unless a detailed explanation is truly needed.\n\n${recipeText}`,
-            },
-            { role: "user", content: prompt },
-          ],
-        }),
-      })
-
-      const qaData = await qaResponse.json()
-      const answer = qaData.choices?.[0]?.message?.content?.trim() ?? "I couldn't answer that. Please try again."
-
-      return new Response(JSON.stringify({ text: answer, recipes: [] }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" },
-      })
+      const text = await runQA(openaiKey, recipeContext, prompt)
+      return new Response(
+        JSON.stringify({ text, recipes: [] }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+      )
     }
 
-    // Fetch user taste preferences for post-retrieval filtering
-    let tastePreferences: string[] = []
-    if (userId) {
-      const { data: profile, error: profileError } = await supabaseAdmin
-        .from("UserTasteProfiles")
-        .select("taste_preferences")
-        .eq("id", userId)
-        .single()
-
-      if (profileError) {
-        console.log("[Stream] Profile fetch error:", profileError.message)
-      } else if (Array.isArray(profile?.taste_preferences)) {
-        tastePreferences = profile.taste_preferences
-        console.log("[Stream] Loaded taste preferences:", tastePreferences.length, "chips")
-      } else {
-        console.log("[Stream] No taste preferences found for user")
-      }
+    // Resolve authenticated user
+    const authHeader = req.headers.get("Authorization")
+    let userId: string | null = null
+    if (authHeader && authHeader !== `Bearer ${supabaseAnonKey}`) {
+      const token = authHeader.replace("Bearer ", "")
+      const { data: { user } } = await supabaseAdmin.auth.getUser(token)
+      if (user) userId = user.id
     }
 
-    console.log("[Stream] Preferences:", tastePreferences)
+    // Fetch preferences + run vision in parallel
+    const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+    const hasImage =
+      typeof imageBase64 === "string" &&
+      imageBase64.length > 0 &&
+      typeof mimeType === "string" &&
+      allowedMimeTypes.includes(mimeType)
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        const encoder = new TextEncoder()
-        try {
-          const requestId = crypto.randomUUID()
-          const debugEnv = Deno.env.get("RETRIEVAL_DEBUG") === "1"
-          const debugByPrompt = /lasagna|meatball|mediterranean/i.test(prompt)
-          const debug = debugEnv || debugByPrompt
-
-          if (debug) {
-            console.log(`[Stream][Debug][${requestId}] Prompt:`, prompt)
-          }
-
-          // Text-only: embedding + RPCs use the user prompt. With a photo: extract
-          // ingredients first (same vision task as analyze-image), then run the same
-          // vector + ingredient + RRF pipeline on "ingredients + user ask".
-          let contextualQuery = prompt
-          let photoIngredientSummary: string | undefined
-
-          const allowedVision = ["image/jpeg", "image/png", "image/webp", "image/gif"]
-          if (
-            typeof imageBase64 === "string" &&
-            imageBase64.length > 0 &&
-            typeof mimeType === "string" &&
-            allowedVision.includes(mimeType)
-          ) {
-            try {
-              const ingredients = await extractIngredientsFromPhoto(
-                openaiKey,
-                imageBase64,
-                mimeType as VisionMimeType,
-                prompt,
-              )
-              const names = ingredients.map(i => i.name.trim()).filter(Boolean)
-              if (names.length > 0) {
-                photoIngredientSummary = names.join(", ")
-                contextualQuery = `${photoIngredientSummary}. ${prompt}`.trim()
-                console.log("[Stream] Photo ingredients (preview):", photoIngredientSummary.substring(0, 120))
-              }
-            } catch (visionErr) {
-              console.error("[Stream] Vision extraction failed, using text prompt only:", visionErr)
-            }
-          }
-
-          console.log("[Stream] Retrieval query:", contextualQuery.substring(0, 150))
-          if (debug && contextualQuery !== prompt) {
-            console.log(`[Stream][Debug][${requestId}] Contextual query:`, contextualQuery)
-          }
-
-          const anchorTerms = getAnchorTerms(prompt)
-          if (debug) {
-            console.log(`[Stream][Debug][${requestId}] Anchor terms:`, anchorTerms)
-          }
-
-          const titleLike = looksLikeRecipeTitleQuery(prompt)
-          if (debug) {
-            console.log(`[Stream][Debug][${requestId}] Title-like query:`, titleLike)
-          }
-
-          // Title/lexical candidates are always recipes.id and recipes metadata is sourced from recipes.
-          const lexicalIds = await titleLexicalCandidates(supabaseAdmin, prompt, 10)
-          if (debug) {
-            console.log(`[Stream][Debug][${requestId}] Lexical candidate IDs:`, lexicalIds)
-          }
-
-          const embedding = await generateEmbedding(contextualQuery, openaiKey)
-
-          // Run vector search and ingredient search in parallel — no added latency
-          const vectorMatchCount = tastePreferences.length > 0 ? 20 : 10
-          const [vectorResult, ingredientRows] = await Promise.all([
-            supabaseAdmin.rpc("match_recipes", {
-              query_embedding: embedding,
-              match_count: vectorMatchCount,
-            }),
-            searchByIngredients(supabaseAdmin, contextualQuery, 20),
-          ])
-
-          if (vectorResult.error) {
-            console.error("[Stream] RPC error:", vectorResult.error)
-            throw new Error(`Database error: ${vectorResult.error.message}`)
-          }
-
-          const rawVectorRows = (vectorResult.data || []) as unknown[]
-          const rawIngredientRows = (ingredientRows || []) as unknown[]
-
-          // Pull IDs for RRF. (We still log raw payloads so we can inspect whether upstream
-          // is providing metadata / polluted IDs.)
-          const vectorRowsTyped = (vectorResult.data || []) as MatchRecipeRow[]
-          const vectorIds = extractVectorCandidateIds(vectorRowsTyped)
-          const ingredientIds = (ingredientRows || [])
-            .map((row: any) => String(row.recipe_id).trim())
-            .filter(Boolean)
-
-          if (debug) {
-            const preview = (arr: unknown[]) => JSON.stringify(arr.slice(0, 12))
-            console.log(`[Stream][Debug][${requestId}] match_recipes raw (preview):`, preview(rawVectorRows))
-            console.log(`[Stream][Debug][${requestId}] search_recipes_by_ingredients raw (preview):`, preview(rawIngredientRows))
-            console.log(`[Stream][Debug][${requestId}] Vector IDs (post-sim threshold):`, vectorIds.slice(0, 30))
-            console.log(`[Stream][Debug][${requestId}] Ingredient IDs:`, ingredientIds.slice(0, 30))
-            console.log(
-              `[Stream][Debug][${requestId}] Contains 6359? vector=${vectorIds.includes("6359")} ingredient=${ingredientIds.includes("6359")} lexical=${lexicalIds.includes("6359")}`,
+    const [preferences, photoIngredients] = await Promise.all([
+      userId
+        ? supabaseAdmin
+            .from("UserTasteProfiles")
+            .select("taste_preferences")
+            .eq("id", userId)
+            .single()
+            .then(({ data }) =>
+              Array.isArray(data?.taste_preferences) ? (data.taste_preferences as string[]) : [],
             )
-          }
-
-          console.log(`[Stream] Vector candidates: ${vectorIds.length} | Ingredient candidates: ${ingredientIds.length}`)
-
-          // Merge using RRF, then prepend lexical candidates with strong preference.
-          let mergedIds = reciprocalRankFusionIds(vectorIds, ingredientIds)
-
-          // Strong exact/near-exact preference for title-like queries:
-          // if lexical IDs exist, move them to the front (deduped), preserving lexical order.
-          if (lexicalIds.length > 0) {
-            mergedIds = Array.from(new Set([...lexicalIds, ...mergedIds]))
-          }
-
-          if (debug) {
-            console.log(`[Stream][Debug][${requestId}] Merged IDs (pre-validation):`, mergedIds.slice(0, 30))
-            console.log(`[Stream][Debug][${requestId}] Contains 6359? merged=${mergedIds.includes("6359")}`)
-          }
-
-          console.log(`[Stream] RRF merged: ${mergedIds.length} unique recipe IDs`)
-
-          mergedIds = await filterExistingRecipes(supabaseAdmin, mergedIds)
-          console.log(`[Stream] After recipes.id validation: ${mergedIds.length} recipe IDs`)
-          if (debug) {
-            console.log(`[Stream][Debug][${requestId}] IDs after validation:`, mergedIds.slice(0, 30))
-            console.log(`[Stream][Debug][${requestId}] Contains 6359? validated=${mergedIds.includes("6359")}`)
-          }
-
-          const metadataMap = await fetchRecipeMetadataByIds(supabaseAdmin, mergedIds)
-          let recipes: Recipe[] = mergedIds
-            .map((id) => metadataMap.get(String(id)))
-            .filter(Boolean) as Recipe[]
-
-          const missingMeta = mergedIds.length - recipes.length
-          if (missingMeta > 0) {
-            console.warn(`[Stream] Missing metadata for ${missingMeta} recipe IDs after validation (unexpected).`)
-          }
-
-          if (debug) {
-            console.log(
-              `[Stream][Debug][${requestId}] Final recipe rows fetched from recipes (pre-anchor):`,
-              recipes.slice(0, 10).map((r) => ({ id: r.id, title: r.title, tags: (r.tags || []).slice(0, 6) })),
-            )
-            console.log(`[Stream][Debug][${requestId}] Contains 6359? recipesFetched=${recipes.some((r) => r.id === "6359")}`)
-          }
-
-          // Final relevance sanity: anchor-boost and conservative filter (non-destructive).
-          recipes = applyAnchorBoostAndFilter(prompt, recipes)
-
-          if (debug) {
-            console.log(
-              `[Stream][Debug][${requestId}] Recipes after anchor boost/filter:`,
-              recipes.slice(0, 10).map((r) => ({ id: r.id, title: r.title })),
-            )
-            console.log(`[Stream][Debug][${requestId}] Contains 6359? afterAnchor=${recipes.some((r) => r.id === "6359")}`)
-          }
-
-          // Post-retrieval dietary filter — the only reliable way to enforce restrictions
-          if (tastePreferences.length > 0) {
-            recipes = await filterRecipesByPreferences(openaiKey, recipes, tastePreferences)
-          }
-
-          // Cap at 6 for display
-          recipes = recipes.slice(0, 6)
-
-          if (recipes.length === 0) {
-            controller.enqueue(encoder.encode(JSON.stringify({ text: "I couldn't find any recipes matching your request. Try a different search.", recipes: [] })))
-            controller.close()
-            return
-          }
-
-          if (debug) {
-            console.log(
-              `[Stream][Debug][${requestId}] Final recipes passed to text/cards:`,
-              recipes.map((r) => ({ id: r.id, title: r.title })),
-            )
-          }
-
-          const text = await getChatText(
+            .catch(() => [] as string[])
+        : Promise.resolve([] as string[]),
+      hasImage
+        ? extractIngredientsFromPhoto(
             openaiKey,
+            imageBase64!,
+            mimeType as VisionMimeType,
             prompt,
-            recipes,
-            tastePreferences,
-            photoIngredientSummary,
-          )
+          ).catch(() => [] as VisionIngredient[])
+        : Promise.resolve([] as VisionIngredient[]),
+    ])
 
-          const groundedText = ensureGroundedAssistantText(text, recipes)
-          if (debug) {
-            console.log(`[Stream][Debug][${requestId}] Raw assistant text:`, text)
-            console.log(`[Stream][Debug][${requestId}] Grounded assistant text:`, groundedText)
-          }
+    const photoContext = buildPhotoContext(photoIngredients)
 
-          const payload = {
-            text: groundedText,
-            recipes: recipes.map(r => ({ id: r.id, title: r.title, image: r.image, caption: r.caption })),
-          }
-          controller.enqueue(encoder.encode(JSON.stringify(payload)))
-          controller.close()
-        } catch (error) {
-          console.error("[Stream] Streaming error:", error)
-          controller.enqueue(encoder.encode(JSON.stringify({ text: "Sorry, I encountered an error. Please try again.", recipes: [] })))
-          controller.close()
-        }
-      },
-    })
-
-    return new Response(stream, {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
-        "Connection": "keep-alive",
-      },
-    })
-  } catch (error) {
-    console.error("[Stream] Edge function error:", error)
+    const { text, recipes } = await runChat(openaiKey, prompt, preferences, photoContext, supabaseAdmin)
 
     return new Response(
-      JSON.stringify({ text: "Sorry, I encountered an error while searching for recipes. Please try again.", recipes: [] }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-      }
+      JSON.stringify({
+        text,
+        recipes: recipes.map(({ id, title, image, caption }) => ({ id, title, image, caption })),
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+    )
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ text: "Sorry, I encountered an error. Please try again.", recipes: [] }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
     )
   }
 })
