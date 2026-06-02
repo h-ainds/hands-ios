@@ -286,11 +286,12 @@ async function runChat(
   supabaseAdmin: ReturnType<typeof createClient>,
 ): Promise<{ text: string; recipes: Recipe[] }> {
   const instructionParts = [
-    "When recommending recipes, call the search_recipes tool first to retrieve real options from our database.",
-    "After receiving search results, write a warm, concise 2–3 sentence response.",
-    "Reference each recipe using [[recipe:ID]] inline — the app renders a card there.",
-    "Example: 'You should try [[recipe:3004]] for a cozy weeknight dinner.'",
-    "Only use IDs returned by the tool. Do not write the recipe name next to the marker.",
+    "When recommending recipes, always call the search_recipes tool first to retrieve real options from our database.",
+    "After receiving search results, write a warm, helpful response (3–5 sentences).",
+    "Reference each recipe by placing [[recipe:ID]] exactly where you would naturally say its name — the app renders a card there.",
+    "Example: 'You should try [[recipe:3004]] for a cozy weeknight dinner — it comes together in under 30 minutes.'",
+    "After each [[recipe:ID]] marker, add a brief note about why it suits the user's request.",
+    "Only use IDs returned by the tool.",
   ]
   if (preferences.length > 0) {
     instructionParts.push(
@@ -349,8 +350,9 @@ async function runChat(
       model: "gpt-5.4-mini",
       previous_response_id: turn1.id,
       instructions:
-        "Write a warm, concise 2–3 sentence response using [[recipe:ID]] inline markers for each recipe you mention. " +
-        "Do not write the recipe name next to the marker — the app renders a card there. " +
+        "Write a warm, helpful 3–5 sentence response recommending these recipes. " +
+        "For each recipe, place [[recipe:ID]] exactly where you would say its name — e.g. 'You'd love [[recipe:2112]], it's a rich fudgy brownie that kids go crazy for.' " +
+        "After each marker, add a brief note about why it suits the user's request. " +
         "Only use IDs from the search results.",
       input: [
         {
