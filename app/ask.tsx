@@ -302,85 +302,95 @@ export default function AskScreen() {
 
         {/* ── Composer — always anchored above keyboard ── */}
         <View className="px-4 pb-4">
-          {/* Attachment preview pill */}
+          {/* Attachment preview — large embedded card */}
           {attachment?.uri && (
             <View
-              className="flex-row items-center bg-gray-100 rounded-2xl px-3 py-2 mb-2 self-start"
-              style={{ maxWidth: '70%' }}
+              className="w-36 rounded-3xl overflow-hidden mb-3"
+              style={{ aspectRatio: 1 }}
             >
               <Image
                 source={{ uri: attachment.uri }}
-                className="w-10 h-10 rounded-xl"
+                className="w-full h-full"
+                resizeMode="cover"
               />
+              {/* Dismiss button — oversized, floating top-right */}
               <Pressable
                 onPress={clearAttachment}
-                className="ml-2 w-6 h-6 rounded-full bg-white items-center justify-center"
                 hitSlop={8}
+                style={{
+                  position: 'absolute',
+                  top: 10,
+                  right: 10,
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: '#FFFFFF',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
-                <SymbolView name="xmark" size={11} tintColor="#6B7280" weight="semibold" />
+                <SymbolView name="xmark" size={14} tintColor="#000000" weight="bold" />
               </Pressable>
             </View>
           )}
 
-          {/* Text Input Composer */}
-          <View
-            className="flex-row items-center bg-white rounded-full px-2"
-            style={{
-              height: 48,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.08,
-              shadowRadius: 8,
-              elevation: 3,
-            }}
-          >
-            {/* Camera button */}
+          {/* Composer row: floating camera button + input pill */}
+          <View className="flex-row items-center gap-2">
+
+            {/* Floating camera button */}
             <Pressable
               onPress={() => pickAttachment('camera')}
               onLongPress={openLibrarySecondary}
               disabled={isLoading}
               hitSlop={6}
-              style={{ opacity: isLoading ? 0.4 : 1, marginRight: 6 }}
+              style={{ opacity: isLoading ? 0.4 : 1 }}
             >
-              <View className="w-10 h-10 rounded-full bg-white items-center justify-center">
-                <SymbolView name="camera" size={18} tintColor="#000000" weight="semibold" />
+              <View className="w-14 h-14 rounded-full bg-white items-center justify-center shadow-drop">
+                <SymbolView name="camera.viewfinder" size={25} tintColor="#000000" weight="semibold" />
               </View>
             </Pressable>
 
-            {/* Text input */}
-            <TextInput
-              value={input}
-              onChangeText={setInput}
-              placeholder="Ask"
-              placeholderTextColor="#9F9F9F"
-              className="flex-1 text-black"
-              style={{ fontSize: 16, paddingVertical: 0, lineHeight: 18 }}
-              returnKeyType="send"
-              onSubmitEditing={handleSubmit}
-              editable={!isLoading}
-              autoFocus={!conversationId}
-              blurOnSubmit={false}
-            />
-
-            {/* Submit button — always visible, muted or green */}
-            <Pressable
-              onPress={handleSubmit}
-              disabled={isLoading}
-              hitSlop={6}
-              style={{ marginLeft: 6, opacity: isLoading ? 0.4 : 1 }}
+            {/* Input pill */}
+            <View
+              className="flex-1 flex-row items-center bg-white rounded-full pl-4 pr-2 shadow-drop"
+              style={{ height: 48 }}
             >
-              <View
-                className="w-10 h-10 rounded-full items-center justify-center"
-                style={{ backgroundColor: hasContent ? '#6CD401' : '#F7F7F7' }}
+              {/* Text input */}
+              <TextInput
+                value={input}
+                onChangeText={setInput}
+                placeholder="Ask"
+                placeholderTextColor="#9F9F9F"
+                className="flex-1 text-black"
+                style={{ fontSize: 16, paddingVertical: 2, lineHeight: 18 }}
+                returnKeyType="send"
+                onSubmitEditing={handleSubmit}
+                editable={!isLoading}
+                autoFocus={!conversationId}
+                blurOnSubmit={false}
+              />
+
+              {/* Submit button — always visible, muted or active */}
+              <Pressable
+                onPress={handleSubmit}
+                disabled={isLoading}
+                hitSlop={6}
+                style={{ marginLeft: 6, opacity: isLoading ? 0.4 : 1 }}
               >
-                <SymbolView
-                  name="arrow.up"
-                  size={18}
-                  tintColor={hasContent ? '#FFFFFF' : '#B2B2B2'}
-                  weight="semibold"
-                />
-              </View>
-            </Pressable>
+                <View
+                  className="w-10 h-10 rounded-full items-center justify-center"
+                  style={{ backgroundColor: hasContent ? '#6CD401' : '#F7F7F7' }}
+                >
+                  <SymbolView
+                    name="arrow.up"
+                    size={18}
+                    tintColor={hasContent ? '#FFFFFF' : '#B2B2B2'}
+                    weight="semibold"
+                  />
+                </View>
+              </Pressable>
+            </View>
+
           </View>
 
           {/* Streaming status hint */}

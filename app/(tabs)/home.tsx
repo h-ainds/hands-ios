@@ -182,7 +182,7 @@ export default function HomeScreen() {
   className="absolute w-12 h-12 rounded-full bg-white items-center justify-center z-50 left-4 top-[50px] shadow-hands"
 >
   <SymbolView
-    name="message"
+    name="clock.arrow.trianglehead.counterclockwise.rotate.90"
     size={23}
     weight="semibold"
     tintColor="#000000"
@@ -205,11 +205,27 @@ export default function HomeScreen() {
       <ScrollView className="flex-1" contentContainerClassName="pb-20 pt-[110px]">
         {/* Quick Actions */}
         <View className="flex-row gap-3 px-4 mb-5">
-          <Pressable className="flex-1 flex-row items-center justify-center gap-1 bg-secondary rounded-full py-4 shadow-black">
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: '/ask',
+                params: { prompt: "Find 3 new recipes I'd be excited to cook this week." },
+              })
+            }
+            className="flex-1 flex-row items-center justify-center gap-1 bg-white rounded-full py-4 shadow-drop"
+          >
             <SymbolView name="fork.knife" size={18} weight="semibold" tintColor="#000000" />
             <Text className="text-base font-semibold text-black">Plan meals</Text>
           </Pressable>
-          <Pressable className="flex-1 flex-row items-center justify-center gap-1 bg-secondary rounded-full py-4">
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: '/ask',
+                params: { prompt: 'Can you make me a one-week grocery list for healthy meals?' },
+              })
+            }
+            className="flex-1 flex-row items-center justify-center gap-1 bg-white rounded-full py-4 shadow-drop"
+          >
             <SymbolView name="cart" size={18} weight="semibold" tintColor="#000000" />
             <Text className="text-base font-semibold text-black">Create</Text>
           </Pressable>
@@ -217,7 +233,7 @@ export default function HomeScreen() {
 
         {/* Today Section */}
         <View className="pb-4">
-          <Text className="text-2xl font-bold tracking-tighter mb-2 px-4">
+          <Text className="text-2xl font-bold tracking-tighter mb-3 px-4">
             Today
           </Text>
           <View className="px-4">
@@ -248,7 +264,7 @@ export default function HomeScreen() {
 
         {/* Recent Recipes Section */}
         <View className="py-5">
-          <Text className="text-2xl font-bold tracking-tighter mb-2 px-4">
+          <Text className="text-2xl font-bold tracking-tighter mb-3 px-4">
             Recents
           </Text>
           {recentLoading ? (
@@ -263,19 +279,19 @@ export default function HomeScreen() {
               contentContainerClassName="gap-2.5">
               {recentRecipes && recentRecipes.length > 0 ? (
                 recentRecipes.slice(0, 10).map((recipe: Recipe) => (
-                  <View key={recipe.id}>
-                    <RecipeCard
-                      recipeId={recipe.id}
-                      title={recipe.title}
-                      image={recipe.image ?? undefined}
-                      cardType="vertical"
-                      rounded="2xl"
-                      showActionButton
-                      isFavorited={isFavorite(recipe.id)}
-                      favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
-                      onToggleFavorite={handleToggleFavorite}
-                      onPress={() => router.push(`/recipe/${recipe.id}`)}/>
-                  </View>
+                  <RecipeCard
+                    key={recipe.id}
+                    recipeId={recipe.id}
+                    title={recipe.title}
+                    image={recipe.image ?? undefined}
+                    cardType="vertical"
+                    rounded="2xl"
+                    showActionButton
+                    isFavorited={isFavorite(recipe.id)}
+                    favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
+                    onToggleFavorite={handleToggleFavorite}
+                    onPress={() => router.push(`/recipe/${recipe.id}`)}
+                  />
                 ))
               ) : (
                 <Text className="text-gray-400 text-base">
@@ -303,19 +319,19 @@ export default function HomeScreen() {
               contentContainerClassName="gap-2.5">
               {ourPicks.length > 0 ? (
                 ourPicks.map((recipe: Recipe) => (
-                  <View key={recipe.id}>
-                    <RecipeCard
-                      recipeId={recipe.id}
-                      title={recipe.title}
-                      image={recipe.image ?? undefined}
-                      cardType="vertical"
-                      rounded="xl"
-                      showActionButton
-                      isFavorited={isFavorite(recipe.id)}
-                      favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
-                      onToggleFavorite={handleToggleFavorite}
-                      onPress={() => router.push(`/recipe/${recipe.id}`)}/>
-                  </View>
+                  <RecipeCard
+                    key={recipe.id}
+                    recipeId={recipe.id}
+                    title={recipe.title}
+                    image={recipe.image ?? undefined}
+                    cardType="vertical"
+                    rounded="xl"
+                    showActionButton
+                    isFavorited={isFavorite(recipe.id)}
+                    favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
+                    onToggleFavorite={handleToggleFavorite}
+                    onPress={() => router.push(`/recipe/${recipe.id}`)}
+                  />
                 ))
               ) : (
                 <Text className="text-gray-400 text-base">
@@ -328,7 +344,7 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* Composer Fixed at Bottom */}
-      <View className="absolute flex-row items-center bottom-4">
+      <View className="absolute flex-row items-center bottom-4 shadow-drop">
         <Composer
           onAskPress={handleAskPress}
         />

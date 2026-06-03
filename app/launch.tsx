@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { View, Text, TouchableOpacity, ActivityIndicator, Image } from 'react-native'
+import { View, Text, TouchableOpacity, ActivityIndicator, Image, Linking } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { signInWithGoogle, signInWithApple } from '@/lib/auth-oauth'
@@ -59,7 +59,6 @@ export default function LaunchScreen() {
             Your weeknight{"\n"}sous-chef.
           </Text>
 
-          {/* Bigger + bolder + aligned with headline */}
           <Text className="text-black text-3xl font-extrabold mt-4 leading-none tracking-tighter">
             Get recipe ideas, plan meals, and shop groceries faster.
           </Text>
@@ -80,12 +79,9 @@ export default function LaunchScreen() {
               </View>
             ) : (
               <View className="relative items-center justify-center">
-                {/* Icon near left edge */}
                 <View className="absolute left-5">
                   <Ionicons name="logo-apple" size={22} color="white" />
                 </View>
-
-                {/* Centered label */}
                 <Text className="text-white text-lg font-medium">
                   Continue with Apple
                 </Text>
@@ -106,7 +102,6 @@ export default function LaunchScreen() {
               </View>
             ) : (
               <View className="relative items-center justify-center">
-                {/* Google image near left edge */}
                 <View className="absolute left-5">
                   <Image
                     source={require('../assets/images/Google-Logo.png')}
@@ -114,8 +109,6 @@ export default function LaunchScreen() {
                     resizeMode="contain"
                   />
                 </View>
-
-                {/* Centered label */}
                 <Text className="text-black text-lg font-semibold">
                   Continue with Google
                 </Text>
@@ -139,6 +132,29 @@ export default function LaunchScreen() {
             <Text className="text-black text-lg font-semibold">Log in</Text>
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Privacy & Terms footer */}
+      <View style={{ paddingHorizontal: 34, paddingBottom: 34 }}>
+        <Text
+          style={{ fontSize: 14, color: 'rgba(0,0,0,0.3)', textAlign: 'center', lineHeight: 20 }}
+        >
+          By continuing, you agree to our{' '}
+          <Text
+            style={{ color: 'rgba(0,0,0,1)', textDecorationLine: 'underline' }}
+            onPress={() => Linking.openURL('https://handsforu.com/terms-of-use')}
+          >
+            Terms
+          </Text>
+          {' '}and have read our{' '}
+          <Text
+            style={{ color: 'rgba(0,0,0,1)', textDecorationLine: 'underline' }}
+            onPress={() => Linking.openURL('https://handsforu.com/privacy-policy')}
+          >
+            Privacy Policy
+          </Text>
+          .
+        </Text>
       </View>
     </SafeAreaView>
   )
