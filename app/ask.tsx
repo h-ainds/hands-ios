@@ -5,8 +5,10 @@ import * as ImagePicker from 'expo-image-picker'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
+import RevenueCatUI from 'react-native-purchases-ui'
 import ChatView from '@/components/chat/ChatView'
 import { useRecipeChat } from '@/hooks/useRecipeChat'
+import { useUsageTracking } from '@/hooks/useUsageTracking'
 import { supabase } from '@/lib/supabase/client'
 import BackButton from '@/components/BackButton'
 
@@ -30,6 +32,8 @@ export default function AskScreen() {
   const { messages, recipeCards, status, isLoading, sendMessage, cancelRequest, setMessages, setRecipeCards } = useRecipeChat({
     timeout: 30000,
   })
+
+  const { canSendMessage, canSendImage, incrementMessage, incrementImage } = useUsageTracking()
 
   const isChatStarted = messages.length > 0
   const isTyping = status === 'connecting' || status === 'streaming' || status === 'typing'
@@ -70,6 +74,10 @@ export default function AskScreen() {
   const clearAttachment = useCallback(() => setAttachment(null), [])
 
   const pickAttachment = useCallback(async (source: ImageSource) => {
+    if (!canSendImage) {
+      await RevenueCatUI.presentPaywall()
+      return
+    }
     try {
       if (source === 'camera') {
         const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync()
@@ -116,7 +124,7 @@ export default function AskScreen() {
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to pick image.')
     }
-  }, [])
+  }, [canSendImage])
 
   const openLibrarySecondary = useCallback(() => {
     if (Platform.OS === 'ios') {
@@ -171,11 +179,18 @@ export default function AskScreen() {
   const handleSubmit = useCallback(async () => {
     if (isLoading || !hasContent) return
 
+    if (!canSendMessage) {
+      await RevenueCatUI.presentPaywall()
+      return
+    }
+
     const typedContext = input.trim()
     const hasImage = !!attachment?.base64
     const displayText = typedContext || 'Sent a photo'
 
     setInput('')
+    await incrementMessage()
+    if (hasImage) await incrementImage()
 
     await sendMessage(
       displayText,
@@ -186,7 +201,7 @@ export default function AskScreen() {
     )
 
     if (hasImage) clearAttachment()
-  }, [input, isLoading, hasContent, sendMessage, conversationId, attachment, clearAttachment])
+  }, [input, isLoading, hasContent, canSendMessage, sendMessage, conversationId, attachment, clearAttachment, incrementMessage, incrementImage])
 
   const handleBack = useCallback(() => {
     if (isLoading) cancelRequest()
