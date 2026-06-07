@@ -1,18 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   View,
   Text,
   Image,
   Pressable,
-  Modal,
-  Animated,
-  Easing,
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { trackRecipeCardTap } from '@/lib/supabase/track'
 import { supabase } from '@/lib/supabase/client'
-import { SymbolView } from 'expo-symbols'
+import PlusButton from '@/components/PlusButton'
 
 interface RecipeCardProps {
   // Must always be recipes.id (source-of-truth table)
@@ -23,29 +20,8 @@ interface RecipeCardProps {
   rounded?: 'lg' | 'xl' | '2xl' | '3xl' | 'none'
   backgroundColor?: string
   showActionButton?: boolean
-  isFavorited?: boolean
-  favoriteLoading?: boolean
-  onToggleFavorite?: (recipeId: string | number) => void | Promise<void>
   onPress?: () => void
 }
-
-const PlusIcon = () => (
-  <SymbolView
-    name="plus"
-    size={17}
-    weight="semibold"
-    tintColor="#111827"
-  />
-)
-
-const CheckIcon = () => (
-  <SymbolView
-    name="checkmark"
-    size={17}
-    weight="semibold"
-    tintColor="#16a34a"
-  />
-)
 
 export default function RecipeCard({
   recipeId,
@@ -55,21 +31,13 @@ export default function RecipeCard({
   rounded = 'xl',
   backgroundColor = 'bg-gray-300',
   showActionButton = false,
-  isFavorited,
-  favoriteLoading = false,
-  onToggleFavorite,
   onPress,
 }: RecipeCardProps) {
   const router = useRouter()
 
-  const [isAdded, setIsAdded] = useState(false)
-  const [isSheetOpen, setIsSheetOpen] = useState(false)
-  const [isSheetMounted, setIsSheetMounted] = useState(false)
   const [imageError, setImageError] = useState(false)
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined)
   const [dbFetched, setDbFetched] = useState(false)
-
-  const sheetAnim = useRef(new Animated.Value(0)).current
 
   const normalizedRecipeId =
     typeof recipeId === 'string' && !isNaN(Number(recipeId))
@@ -268,39 +236,6 @@ export default function RecipeCard({
     normalizedRecipeId,
   ])
 
-  const handleActionPress = () => {
-    if (favoriteLoading) return
-
-    setIsSheetMounted(true)
-    setIsSheetOpen(true)
-  }
-
-  const handleAddToFavorites = () => {
-    if (onToggleFavorite && hasValidRecipeId) {
-      onToggleFavorite(
-        normalizedRecipeId as string | number
-      )
-
-      closeSheet()
-      return
-    }
-
-    setIsAdded((prev) => !prev)
-    closeSheet()
-  }
-
-  const closeSheet = () => {
-    Animated.timing(sheetAnim, {
-      toValue: 0,
-      duration: 180,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start(() => {
-      setIsSheetMounted(false)
-      setIsSheetOpen(false)
-    })
-  }
-
   const handleCardPress = async () => {
     if (!onPress && !hasValidRecipeId) {
       console.warn(
@@ -333,32 +268,6 @@ export default function RecipeCard({
     imageError || !imageUrl
       ? require('../assets/placeholder.png')
       : { uri: imageUrl }
-
-  const showAddedState =
-    isFavorited ?? isAdded
-
-  const backdropOpacity = sheetAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 1],
-  })
-
-  const sheetTranslateY = sheetAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [280, 0],
-  })
-
-  useEffect(() => {
-    if (!isSheetOpen) return
-
-    sheetAnim.setValue(0)
-
-    Animated.timing(sheetAnim, {
-      toValue: 1,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start()
-  }, [isSheetOpen, sheetAnim])
 
   return (
     <Pressable
@@ -396,73 +305,8 @@ export default function RecipeCard({
       </View>
 
       {showActionButton && (
-        <Pressable
-          onPress={(event) => {
-            event.stopPropagation()
-            handleActionPress()
-          }}
-          disabled={favoriteLoading}
-          className={`absolute top-3 right-3 bg-white rounded-full p-2 shadow-md ${
-            favoriteLoading ? 'opacity-70' : ''
-          }`}
-        >
-          <View className="w-6 h-6 items-center justify-center">
-            {showAddedState ? (
-              <CheckIcon />
-            ) : (
-              <PlusIcon />
-            )}
-          </View>
-        </Pressable>
+        <PlusButton recipeId={normalizedRecipeId} variant="card" style={{ top: 12, right: 12 }} />
       )}
-
-      <Modal
-        visible={isSheetMounted}
-        transparent
-        animationType="none"
-        onRequestClose={closeSheet}
-      >
-        <View className="flex-1 justify-end">
-          <Animated.View
-            className="absolute inset-0 bg-black/30"
-            style={{ opacity: backdropOpacity }}
-          />
-
-          <Pressable
-            className="absolute inset-0"
-            onPress={closeSheet}
-          />
-
-          <Animated.View
-            className="bg-white rounded-t-3xl px-4 pt-3 pb-8"
-            style={{
-              transform: [
-                { translateY: sheetTranslateY },
-              ],
-            }}
-          >
-            <View className="w-12 h-1.5 bg-gray-300 rounded-full self-center mb-4" />
-
-            <Pressable
-              className="py-4 px-2"
-              onPress={handleAddToFavorites}
-            >
-              <Text className="text-lg font-semibold text-black">
-                {showAddedState ? 'Remove from Favorites' : 'Add to Favorites'}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              className="py-4 px-2 border-t border-gray-100"
-              onPress={closeSheet}
-            >
-              <Text className="text-lg font-semibold text-black">
-                Reply
-              </Text>
-            </Pressable>
-          </Animated.View>
-        </View>
-      </Modal>
     </Pressable>
   )
 }

@@ -2,6 +2,7 @@ import "./global.css"
 import { useEffect } from 'react'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
+import { FavoritesProvider } from '@/context/FavoritesContext'
 import { SubscriptionProvider } from '@/context/SubscriptionContext'
 import { View, ActivityIndicator } from 'react-native'
 
@@ -64,9 +65,11 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <SubscriptionProvider>
-        <RootLayoutNav />
-      </SubscriptionProvider>
+      <FavoritesProvider>
+        <SubscriptionProvider>
+          <RootLayoutNav />
+        </SubscriptionProvider>
+      </FavoritesProvider>
     </AuthProvider>
   )
 }
