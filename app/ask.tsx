@@ -48,6 +48,8 @@ export default function AskScreen() {
 
   const { canSendMessage, canSendImage, incrementMessage, incrementImage } = useUsageTracking()
 
+  const [isMultiline, setIsMultiline] = useState(false)
+
   const isChatStarted = messages.length > 0
   const isTyping = status === 'connecting' || status === 'streaming' || status === 'typing'
   const hasContent = input.trim().length > 0 || !!attachment?.base64
@@ -258,6 +260,7 @@ export default function AskScreen() {
     const displayText = typedContext || 'Sent a photo'
 
     setInput('')
+    setIsMultiline(false)
     await incrementMessage()
     if (hasImage) await incrementImage()
 
@@ -335,7 +338,7 @@ export default function AskScreen() {
           )}
 
           {/* Composer row: floating camera button + input pill */}
-          <View className="flex-row items-center gap-2">
+          <View className="flex-row items-end gap-2">
 
             {/* Floating camera button */}
             <Pressable
@@ -352,8 +355,13 @@ export default function AskScreen() {
 
             {/* Input pill */}
             <View
-              className="flex-1 flex-row items-center bg-white rounded-full pl-4 pr-2 shadow-drop"
-              style={{ height: 48 }}
+              className="flex-1 flex-row bg-white pl-4 pr-2 shadow-drop"
+              style={{
+                alignItems: isMultiline ? 'flex-end' : 'center',
+                borderRadius: isMultiline ? 24 : 9999,
+                paddingVertical: isMultiline ? 8 : 4,
+                minHeight: 48,
+              }}
             >
               {/* Text input */}
               <TextInput
@@ -362,12 +370,17 @@ export default function AskScreen() {
                 placeholder="Ask"
                 placeholderTextColor="#9F9F9F"
                 className="flex-1 text-black"
-                style={{ fontSize: 16, paddingVertical: 2, lineHeight: 18 }}
+                style={{ fontSize: 16, lineHeight: 20, paddingTop: 2, paddingBottom: 2 }}
+                multiline
+                scrollEnabled={false}
                 returnKeyType="send"
                 onSubmitEditing={handleSubmit}
                 editable={!isLoading}
                 autoFocus={!conversationId}
                 blurOnSubmit={false}
+                onContentSizeChange={(e) =>
+                  setIsMultiline(e.nativeEvent.contentSize.height > 26)
+                }
               />
 
               {/* Submit button — always visible, muted or active */}
