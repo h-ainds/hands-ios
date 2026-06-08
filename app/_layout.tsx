@@ -19,7 +19,7 @@ function RootLayoutNav() {
     const currentRoute = segments[0] as string | undefined
 
     // Check if user is on a public route
-    const isPublicRoute = PUBLIC_ROUTES.includes(currentRoute || '') || currentRoute === '(auth)'
+    const isPublicRoute = PUBLIC_ROUTES.includes(currentRoute || '')
 
     if (!session && !isPublicRoute) {
       // No session and trying to access protected route - redirect to login
@@ -43,7 +43,6 @@ function RootLayoutNav() {
     <Stack>
       <Stack.Screen name="launch" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="signup" options={{ headerShown: false }} />
       <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
@@ -55,7 +54,6 @@ function RootLayoutNav() {
       <Stack.Screen name="verify-email" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding-profile" options={{ headerShown: false }} />
       <Stack.Screen name="memory" options={{ headerShown: false }} />
-      <Stack.Screen name="scan" options={{ headerShown: false }} />
     </Stack>
   )
 }
