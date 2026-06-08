@@ -1,4 +1,4 @@
-import { ActivityIndicator, Alert, FlatList, Text, View } from 'react-native'
+import { ActivityIndicator, FlatList, Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import BackButton from '@/components/BackButton'
 import RecipeCard from '@/components/RecipeCard'
@@ -8,16 +8,7 @@ import { useAuth } from '@/context/AuthContext'
 export default function FavoritesScreen() {
   const router = useRouter()
   const { user } = useAuth()
-  const { favorites, loading, error, removeFavorite, pendingRecipeIds } = useFavorites()
-
-  const handleRemoveFavorite = async (recipeId: string | number) => {
-    try {
-      await removeFavorite(recipeId)
-    } catch (err) {
-      console.error('Failed to remove favorite:', err)
-      Alert.alert('Could not remove favorite')
-    }
-  }
+  const { favorites, loading, error } = useFavorites()
 
   return (
     <View className="flex-1 bg-white">
@@ -62,9 +53,6 @@ export default function FavoritesScreen() {
               cardType="horizontal"
               rounded="3xl"
               showActionButton
-              isFavorited
-              favoriteLoading={pendingRecipeIds.has(Number(item.id))}
-              onToggleFavorite={handleRemoveFavorite}
               onPress={() => router.push(`/recipe/${item.id}`)}
             />
           )}

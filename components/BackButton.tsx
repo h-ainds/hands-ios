@@ -38,7 +38,7 @@ export default function BackButton({ onPress }: BackButtonProps) {
         zIndex: 50,
       }}
     >
-      <SymbolView name="chevron.left" size={20} tintColor="#000000" />
+      <SymbolView name="chevron.left" size={20} weight="semibold" tintColor="#000000" />
     </Pressable>
   )
 }

@@ -8,13 +8,11 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { supabase } from '../lib/supabase/client'
 import RecipeCard from '@/components/RecipeCard'
 import BackButton from '@/components/BackButton'
-import { useFavorites } from '@/hooks/useFavorites'
 
 type RecipeResult = {
   id: string | number
@@ -27,20 +25,6 @@ export default function SearchScreen() {
   const [results, setResults] = useState<RecipeResult[]>([])
   const [loading, setLoading] = useState(false)
   const router = useRouter()
-  const { isFavorite, toggleFavorite, pendingRecipeIds, favoritesAvailable } = useFavorites()
-
-  const handleToggleFavorite = async (recipeId: string | number) => {
-    try {
-      const wasFavorite = isFavorite(recipeId)
-      const updated = await toggleFavorite(recipeId)
-      if (!updated && !favoritesAvailable) {
-        Alert.alert('Favorites setup needed', 'Run your latest Supabase migration to enable Favorites.')
-      }
-    } catch (err) {
-      console.error('Failed to update favorite:', err)
-      Alert.alert('Could not update favorites')
-    }
-  }
 
   useEffect(() => {
     if (!query.trim()) {
@@ -142,9 +126,6 @@ export default function SearchScreen() {
                 image={item.image || undefined}
                 cardType="square"
                 showActionButton
-                isFavorited={isFavorite(item.id)}
-                favoriteLoading={pendingRecipeIds.has(Number(item.id))}
-                onToggleFavorite={handleToggleFavorite}
                 onPress={() => router.push(`/recipe/${item.id}` as any)}
               />
             </View>

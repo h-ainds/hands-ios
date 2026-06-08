@@ -1,4 +1,4 @@
-import { Pressable, ActivityIndicator, ScrollView, Alert } from 'react-native'
+import { Pressable, ActivityIndicator, ScrollView } from 'react-native'
 import { Text, View } from 'react-native'
 import { useRecipes } from '@/hooks/useRecipes'
 import { useRouter } from 'expo-router'
@@ -11,8 +11,6 @@ import { useAuth } from '@/context/AuthContext'
 import ChatHistorySheet from '@/components/ChatHistorySheet'
 import { SymbolView } from 'expo-symbols'
 import { useFocusEffect } from 'expo-router'
-import { useFavorites } from '@/hooks/useFavorites'
-
 export default function HomeScreen() {
   const { recipes, loading, error } = useRecipes()
   const router = useRouter()
@@ -23,20 +21,7 @@ export default function HomeScreen() {
   const [recentRecipes, setRecentRecipes] = useState<Recipe[]>([])
   const [recentLoading, setRecentLoading] = useState(true)
   const [isChatHistoryOpen, setIsChatHistoryOpen] = useState(false)
-  const { isFavorite, toggleFavorite, pendingRecipeIds, favoritesAvailable } = useFavorites()
 
-  const handleToggleFavorite = async (recipeId: string | number) => {
-    try {
-      const wasFavorite = isFavorite(recipeId)
-      const updated = await toggleFavorite(recipeId)
-      if (!updated && !favoritesAvailable) {
-        Alert.alert('Favorites setup needed', 'Run your latest Supabase migration to enable Favorites.')
-      }
-    } catch (err) {
-      console.error('Failed to update favorite:', err)
-      Alert.alert('Could not update favorites')
-    }
-  }
   // Fetch random recipes for hero and our picks
   useEffect(() => {
     async function fetchRandomRecipes() {
@@ -249,9 +234,6 @@ export default function HomeScreen() {
                 cardType="horizontal"
                 rounded="3xl"
                 showActionButton
-                isFavorited={isFavorite(heroRecipe.id)}
-                favoriteLoading={pendingRecipeIds.has(Number(heroRecipe.id))}
-                onToggleFavorite={handleToggleFavorite}
                 onPress={() => router.push(`/recipe/${heroRecipe.id}`)}
               />
             ) : (
@@ -287,9 +269,6 @@ export default function HomeScreen() {
                     cardType="vertical"
                     rounded="2xl"
                     showActionButton
-                    isFavorited={isFavorite(recipe.id)}
-                    favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
-                    onToggleFavorite={handleToggleFavorite}
                     onPress={() => router.push(`/recipe/${recipe.id}`)}
                   />
                 ))
@@ -325,11 +304,8 @@ export default function HomeScreen() {
                     title={recipe.title}
                     image={recipe.image ?? undefined}
                     cardType="vertical"
-                    rounded="xl"
+                    rounded="2xl"
                     showActionButton
-                    isFavorited={isFavorite(recipe.id)}
-                    favoriteLoading={pendingRecipeIds.has(Number(recipe.id))}
-                    onToggleFavorite={handleToggleFavorite}
                     onPress={() => router.push(`/recipe/${recipe.id}`)}
                   />
                 ))
