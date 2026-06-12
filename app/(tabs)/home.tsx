@@ -199,7 +199,7 @@ export default function HomeScreen() {
             }
             className="flex-1 flex-row items-center justify-center gap-1 bg-white rounded-full py-4 shadow-drop"
           >
-            <SymbolView name="fork.knife" size={18} weight="semibold" tintColor="#6ED308" />
+            <SymbolView name="fork.knife" size={18} weight="semibold" tintColor="#000000" />
             <Text className="text-base font-semibold text-black">Plan meals</Text>
           </Pressable>
           <Pressable
@@ -211,7 +211,7 @@ export default function HomeScreen() {
             }
             className="flex-1 flex-row items-center justify-center gap-1 bg-white rounded-full py-4 shadow-drop"
           >
-            <SymbolView name="cart" size={18} weight="semibold" tintColor="#A7EB13" />
+            <SymbolView name="cart" size={18} weight="semibold" tintColor="#000000" />
             <Text className="text-base font-semibold text-black">Create</Text>
           </Pressable>
         </View>
