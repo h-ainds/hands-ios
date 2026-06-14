@@ -1,6 +1,6 @@
 import { supabase } from './client'
 
-export async function trackRecipeView(recipeId: string) {
+export async function trackRecipeView(recipeId: string | number) {
   try {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
@@ -10,7 +10,7 @@ export async function trackRecipeView(recipeId: string) {
       .upsert(
         { 
           user_id: user.id, 
-          recipe_id: recipeId, 
+          recipe_id: String(recipeId), 
           viewed_at: new Date().toISOString(),
           is_featured: false
         },
@@ -26,7 +26,7 @@ export async function trackRecipeView(recipeId: string) {
 }
 
 export async function trackRecipeInteraction(
-  recipeId: string, 
+  recipeId: string | number, 
   interactionType: 'view' | 'tap' | 'share' | 'save' = 'view'
 ) {
   try {
@@ -36,7 +36,7 @@ export async function trackRecipeInteraction(
     const timestamp = new Date().toISOString()
     const updateData: Record<string, any> = {
       user_id: user.id,
-      recipe_id: recipeId,
+      recipe_id: String(recipeId),
     }
 
     updateData.viewed_at = timestamp
@@ -54,10 +54,10 @@ export async function trackRecipeInteraction(
   }
 }
 
-export async function trackRecipeCardView(recipeId: string) {
+export async function trackRecipeCardView(recipeId: string | number) {
   return trackRecipeInteraction(recipeId, 'view')
 }
 
-export async function trackRecipeCardTap(recipeId: string) {
+export async function trackRecipeCardTap(recipeId: string | number) {
   return trackRecipeInteraction(recipeId, 'tap')
 }

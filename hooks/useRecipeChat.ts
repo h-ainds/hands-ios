@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { parseAnswerXml, ParsedAnswer } from "@/lib/parseAnswerXml";
 import { supabase } from "@/lib/supabase/client";
 
 export type ChatMessage = {
@@ -9,7 +8,10 @@ export type ChatMessage = {
 
 export type RecipeCardData = {
   messageIndex: number;
-  recipes: ParsedAnswer;
+  recipes: {
+    text?: string;
+    items: { id: string; title: string; caption: string; image: string }[];
+  };
 };
 
 export type StreamingStatus =
@@ -26,10 +28,10 @@ export type ChatSendAttachment = {
 };
 
 const DEFAULT_IMAGE_CONTEXT = "What can I make with these ingredients?";
+const DEFAULT_TIMEOUT = 30000;
 
 interface UseRecipeChatOptions {
   timeout?: number;
-  typingDelay?: number;
   onError?: (error: Error) => void;
 }
 
@@ -50,17 +52,10 @@ interface UseRecipeChatReturn {
   setRecipeCards: React.Dispatch<React.SetStateAction<RecipeCardData[]>>;
 }
 
-const DEFAULT_TIMEOUT = 30000; // 30 seconds
-const DEFAULT_TYPING_DELAY = 6;
-
 export function useRecipeChat(
   options: UseRecipeChatOptions = {},
 ): UseRecipeChatReturn {
-  const {
-    timeout = DEFAULT_TIMEOUT,
-    typingDelay = DEFAULT_TYPING_DELAY,
-    onError,
-  } = options;
+  const { timeout = DEFAULT_TIMEOUT, onError } = options;
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [recipeCards, setRecipeCards] = useState<RecipeCardData[]>([]);
@@ -72,13 +67,9 @@ export function useRecipeChat(
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
-  const messagesRef = useRef<ChatMessage[]>([]);
+  // Tracks Responses API context: [user1, ...output1, user2, ...output2, ...]
+  const conversationContextRef = useRef<unknown[]>([]);
 
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  // Cleanup on unmount
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -87,39 +78,8 @@ export function useRecipeChat(
     };
   }, []);
 
-  // Type out assistant text character by character
-  const typeAssistantText = useCallback(
-    async (text: string): Promise<void> => {
-      let current = "";
-
-      for (let i = 0; i < text.length; i++) {
-        if (!isMountedRef.current) break;
-
-        current += text[i];
-        const currentText = current;
-
-        if (isMountedRef.current) {
-          setMessages((prev) =>
-            prev.map((msg, idx) =>
-              idx === prev.length - 1 ? { ...msg, content: currentText } : msg,
-            ),
-          );
-        }
-
-        await new Promise((res) => setTimeout(res, typingDelay));
-      }
-    },
-    [typingDelay],
-  );
-
-  // Save message to Supabase conversation
   const saveMessageToConversation = useCallback(
-    async (
-      convId: string,
-      role: "user" | "assistant",
-      content: string,
-      recipes?: ParsedAnswer,
-    ) => {
+    async (convId: string, role: "user" | "assistant", content: string) => {
       try {
         const { data: conv } = await supabase
           .from("conversations")
@@ -127,14 +87,8 @@ export function useRecipeChat(
           .eq("id", convId)
           .single();
 
-        const currentContent = conv?.content || [];
-        const newMessage: any = { role, content };
-
-        if (recipes && recipes.items.length > 0) {
-          newMessage.recipes = recipes.items;
-        }
-
-        const newContent = [...currentContent, newMessage];
+        const currentContent = (conv?.content as unknown[]) || [];
+        const newContent = [...currentContent, { role, content }];
 
         await supabase
           .from("conversations")
@@ -143,14 +97,13 @@ export function useRecipeChat(
             updated_at: new Date().toISOString(),
           })
           .eq("id", convId);
-      } catch (error) {
-        console.error("Error saving message:", error);
+      } catch (err) {
+        console.error("Error saving message:", err);
       }
     },
     [],
   );
 
-  // Send message and handle streaming response
   const sendMessage = useCallback(
     async (
       message: string,
@@ -159,14 +112,15 @@ export function useRecipeChat(
     ) => {
       if (!message.trim() && !payload?.imageBase64) return;
 
-      // Cancel any existing request
       abortControllerRef.current?.abort();
       abortControllerRef.current = new AbortController();
 
       const userMessage = message.trim();
       let activeConversationId = conversationId || currentConversationId;
 
-      // Add user message and update status
+      // Snapshot context before this turn so we can extend it after response
+      const contextSnapshot = [...conversationContextRef.current];
+
       if (isMountedRef.current) {
         setMessages((prev) => [
           ...prev,
@@ -176,14 +130,14 @@ export function useRecipeChat(
         setError(null);
       }
 
-      // Create new conversation if needed
+      // Create or update conversation in Supabase
       if (!activeConversationId) {
         try {
           const {
             data: { user },
           } = await supabase.auth.getUser();
           if (user) {
-            const { data, error } = await supabase
+            const { data, error: insertError } = await supabase
               .from("conversations")
               .insert({
                 title: userMessage.slice(0, 50) + "...",
@@ -193,7 +147,7 @@ export function useRecipeChat(
               .select("id")
               .single();
 
-            if (!error && data) {
+            if (!insertError && data) {
               activeConversationId = data.id;
               setCurrentConversationId(data.id);
             }
@@ -202,7 +156,6 @@ export function useRecipeChat(
           console.error("Error creating conversation:", err);
         }
       } else {
-        // Save user message to existing conversation
         await saveMessageToConversation(
           activeConversationId,
           "user",
@@ -210,7 +163,6 @@ export function useRecipeChat(
         );
       }
 
-      // Create timeout
       const timeoutId = setTimeout(() => {
         abortControllerRef.current?.abort();
         if (isMountedRef.current) {
@@ -231,177 +183,179 @@ export function useRecipeChat(
       }, timeout);
 
       try {
-        // Get the current session for authentication
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
-        // Build the Edge Function URL
         const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
         const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
         if (!supabaseUrl || !anonKey) {
           throw new Error("Supabase configuration missing");
         }
 
-        const functionUrl = `${supabaseUrl}/functions/v1/streamv3`;
-
-        const normalizedContext = (payload?.context ?? "").trim();
         const isImageSend = Boolean(payload?.imageBase64);
         const promptForModel = isImageSend
-          ? normalizedContext || DEFAULT_IMAGE_CONTEXT
+          ? payload?.context?.trim() || DEFAULT_IMAGE_CONTEXT
           : userMessage;
-        const history = messagesRef.current
-          .filter((m) => m.role === "user")
-          .slice(-2)
-          .map((m) => m.content);
 
         const requestBody: Record<string, unknown> = {
           prompt: promptForModel,
-          history,
+          context: contextSnapshot,
         };
         if (isImageSend && payload?.imageBase64) {
-          requestBody.context = normalizedContext || DEFAULT_IMAGE_CONTEXT;
           requestBody.imageBase64 = payload.imageBase64;
           if (payload.mimeType) requestBody.mimeType = payload.mimeType;
         }
 
-        // Make POST request to streaming endpoint
-        const response = await fetch(functionUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "text/plain",
-            apikey: anonKey,
-            Authorization: `Bearer ${session?.access_token || anonKey}`,
+        const response = await fetch(
+          `${supabaseUrl}/functions/v1/streamv5`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "text/event-stream",
+              apikey: anonKey,
+              Authorization: `Bearer ${session?.access_token || anonKey}`,
+            },
+            body: JSON.stringify(requestBody),
+            signal: abortControllerRef.current.signal,
           },
-          body: JSON.stringify(requestBody),
-          signal: abortControllerRef.current.signal,
-        });
+        );
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => "Unknown error");
           throw new Error(`Server error (${response.status}): ${errorText}`);
         }
 
+        if (isMountedRef.current) setStatus("streaming");
+
+        // Add empty assistant message to be filled by stream
         if (isMountedRef.current) {
-          setStatus("streaming");
-        }
-
-        // Read stream as text (React Native compatible)
-        const fullResponse = await response.text();
-
-        clearTimeout(timeoutId);
-
-        if (!isMountedRef.current) return;
-
-        console.log("[Stream] Response length:", fullResponse.length);
-        console.log(
-          "[Stream] Response (first 1500 chars):",
-          fullResponse.substring(0, 1500),
-        );
-
-        if (!isMountedRef.current) return;
-
-        if (isMountedRef.current) {
-          setStatus("typing");
-        }
-
-        // Strip markdown code fences if LLM wraps output in them
-        const cleanXml = fullResponse
-          .replace(/^```(?:xml)?\s*/i, "")
-          .replace(/\s*```$/i, "")
-          .trim();
-
-        // Always extract clean display text — never show raw XML
-        const extractDisplayText = (raw: string): string => {
-          // Try well-formed </text> first, then fall back to stopping at <items>
-          const m = raw.match(/<text>([\s\S]*?)(?:<\/text>|<items>)/);
-          if (m?.[1]?.trim()) return m[1].trim();
-          // Last resort: grab everything after <text> until the next tag
-          const m2 = raw.match(/<text>([^<]+)/);
-          if (m2?.[1]?.trim()) return m2[1].trim();
-          return "";
-        };
-
-        const displayText =
-          extractDisplayText(cleanXml) ||
-          "I couldn't find any recipes for that. Try asking differently!";
-
-        // Parse items for recipe cards (separate from display)
-        const parsed = parseAnswerXml(cleanXml);
-        console.log("[useRecipeChat] displayText:", displayText);
-        console.log(
-          "[useRecipeChat] Parsed items:",
-          parsed?.items?.length ?? 0,
-        );
-
-        let assistantMessageIndex = -1;
-
-        // Add empty assistant message for typing effect
-        if (isMountedRef.current) {
-          setMessages((prev) => {
-            assistantMessageIndex = prev.length;
-            return [...prev, { role: "assistant" as const, content: "" }];
-          });
-        }
-
-        // Type out ONLY the clean display text
-        await typeAssistantText(displayText);
-
-        // Add recipe cards if items were parsed
-        if (parsed?.items && parsed.items.length > 0 && isMountedRef.current) {
-          console.log(
-            "[useRecipeChat] Adding recipe cards:",
-            parsed.items.length,
-            "items",
-          );
-          setRecipeCards((prev) => [
+          setMessages((prev) => [
             ...prev,
-            {
-              messageIndex: assistantMessageIndex,
-              recipes: parsed,
-            },
+            { role: "assistant" as const, content: "" },
           ]);
         }
 
-        // Save assistant message to conversation
+        let accumulatedText = "";
+        let outputItems: unknown[] = [];
+
+        if (response.body) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let currentEventType = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+
+            for (const line of lines) {
+              if (line.startsWith("event: ")) {
+                currentEventType = line.slice(7).trim();
+              } else if (line.startsWith("data: ")) {
+                const data = line.slice(6).trim();
+                if (!data || data === "[DONE]") {
+                  currentEventType = "";
+                  continue;
+                }
+                try {
+                  const event = JSON.parse(data) as Record<string, unknown>;
+                  const eventType =
+                    (event.type as string) ?? currentEventType;
+
+                  if (eventType === "response.output_text.delta") {
+                    accumulatedText += (event.delta as string) ?? "";
+                    if (isMountedRef.current) {
+                      const text = accumulatedText;
+                      setMessages((prev) =>
+                        prev.map((msg, idx) =>
+                          idx === prev.length - 1
+                            ? { ...msg, content: text }
+                            : msg,
+                        ),
+                      );
+                    }
+                  } else if (eventType === "response.completed") {
+                    const res = event.response as
+                      | Record<string, unknown>
+                      | undefined;
+                    outputItems = (res?.output as unknown[]) ?? [];
+                  }
+                } catch {
+                  // Ignore malformed SSE lines
+                }
+                currentEventType = "";
+              }
+            }
+          }
+        } else {
+          // Fallback: buffer entire response (environments without streaming support)
+          const raw = await response.text();
+          for (const line of raw.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6).trim();
+            if (!data || data === "[DONE]") continue;
+            try {
+              const event = JSON.parse(data) as Record<string, unknown>;
+              if (event.type === "response.output_text.delta") {
+                accumulatedText += (event.delta as string) ?? "";
+              } else if (event.type === "response.completed") {
+                const res = event.response as Record<string, unknown> | undefined;
+                outputItems = (res?.output as unknown[]) ?? [];
+              }
+            } catch {}
+          }
+          if (isMountedRef.current) {
+            setMessages((prev) =>
+              prev.map((msg, idx) =>
+                idx === prev.length - 1
+                  ? { ...msg, content: accumulatedText }
+                  : msg,
+              ),
+            );
+          }
+        }
+
+        clearTimeout(timeoutId);
+        if (!isMountedRef.current) return;
+
+        // Extend context: prior context + user message (text only) + assistant output
+        conversationContextRef.current = [
+          ...contextSnapshot,
+          { role: "user", content: promptForModel },
+          ...outputItems,
+        ];
+
         if (activeConversationId) {
           await saveMessageToConversation(
             activeConversationId,
             "assistant",
-            displayText,
-            parsed || undefined,
+            accumulatedText,
           );
         }
 
-        if (isMountedRef.current) {
-          setStatus("idle");
-        }
+        if (isMountedRef.current) setStatus("idle");
       } catch (err) {
         clearTimeout(timeoutId);
-
         if (!isMountedRef.current) return;
 
-        // Don't treat abort as an error
         if (err instanceof Error && err.name === "AbortError") {
-          if (isMountedRef.current) {
-            setStatus("idle");
-          }
+          if (isMountedRef.current) setStatus("idle");
           return;
         }
 
         const errorObj =
-          err instanceof Error
-            ? err
-            : new Error("An unexpected error occurred");
+          err instanceof Error ? err : new Error("An unexpected error occurred");
         console.error("[useRecipeChat] Error:", errorObj.message);
 
         if (isMountedRef.current) {
           setError(errorObj);
           setStatus("error");
-
-          // Add error message to chat
           setMessages((prev) => [
             ...prev,
             {
@@ -410,22 +364,14 @@ export function useRecipeChat(
             },
           ]);
         }
-
         onError?.(errorObj);
       } finally {
         clearTimeout(timeoutId);
       }
     },
-    [
-      timeout,
-      typeAssistantText,
-      onError,
-      currentConversationId,
-      saveMessageToConversation,
-    ],
+    [timeout, onError, currentConversationId, saveMessageToConversation],
   );
 
-  // Clear all chat state
   const clearChat = useCallback(() => {
     abortControllerRef.current?.abort();
     if (isMountedRef.current) {
@@ -434,15 +380,13 @@ export function useRecipeChat(
       setStatus("idle");
       setError(null);
       setCurrentConversationId(null);
+      conversationContextRef.current = [];
     }
   }, []);
 
-  // Cancel current request
   const cancelRequest = useCallback(() => {
     abortControllerRef.current?.abort();
-    if (isMountedRef.current) {
-      setStatus("idle");
-    }
+    if (isMountedRef.current) setStatus("idle");
   }, []);
 
   return {

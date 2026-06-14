@@ -1,31 +1,30 @@
 import React, { useState, useEffect } from 'react'
-import { View, Text, Image, Pressable } from 'react-native'
+import {
+  View,
+  Text,
+  Image,
+  Pressable,
+} from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { trackRecipeCardTap } from '@/lib/supabase/track'
 import { supabase } from '@/lib/supabase/client'
+import PlusButton from '@/components/PlusButton'
 
 interface RecipeCardProps {
-  id?: string | number
+  // Must always be recipes.id (source-of-truth table)
+  recipeId?: string | number
   title: string
   image?: string
   cardType?: 'vertical' | 'square' | 'horizontal'
-  rounded?: 'lg' | 'xl' | '2xl'| 'none'
+  rounded?: 'lg' | 'xl' | '2xl' | '3xl' | 'none'
   backgroundColor?: string
   showActionButton?: boolean
   onPress?: () => void
 }
 
-const PlusIcon = () => (
-  <Text className="text-black text-2xl font-bold">+</Text>
-)
-
-const CheckIcon = () => (
-  <Text className="text-green-500 text-2xl font-bold">✓</Text>
-)
-
 export default function RecipeCard({
-  id,
+  recipeId,
   title,
   image,
   cardType = 'vertical',
@@ -35,73 +34,48 @@ export default function RecipeCard({
   onPress,
 }: RecipeCardProps) {
   const router = useRouter()
-  const [isAdded, setIsAdded] = useState(false)
+
   const [imageError, setImageError] = useState(false)
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined)
   const [dbFetched, setDbFetched] = useState(false)
 
-  // Use image prop if valid, otherwise fetch from DB
-  useEffect(() => {
-    const cancelled = { value: false }
-    const trimmedImage = image?.trim()
-    if (trimmedImage && trimmedImage !== 'undefined' && trimmedImage !== 'null') {
-      setImageUrl(trimmedImage)
-      setImageError(false)
-      setDbFetched(false)
-    } else if (id) {
-      const recipeId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-      supabase
-        .from('recipes')
-        .select('image')
-        .eq('id', recipeId)
-        .maybeSingle()
-        .then(({ data, error }) => {
-          if (!cancelled.value) {
-            if (error) console.error('Error fetching recipe image:', error)
-            else if (data?.image) setImageUrl(data.image)
-          }
-        })
-        .catch((err) => { if (!cancelled.value) console.error('Error fetching recipe image:', err) })
-    }
-    return () => { cancelled.value = true }
-  }, [id, image])
+  const normalizedRecipeId =
+    typeof recipeId === 'string' && !isNaN(Number(recipeId))
+      ? Number(recipeId)
+      : recipeId
 
-  // If the image URL fails to load and we haven't tried the DB yet, fall back to DB
-  useEffect(() => {
-    if (!imageError || dbFetched || !id) return
-    setDbFetched(true)
-    const cancelled = { value: false }
-    const recipeId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    supabase
-      .from('recipes')
-      .select('image')
-      .eq('id', recipeId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (!cancelled.value) {
-          if (error) console.error('Error fetching recipe image:', error)
-          else if (data?.image) {
-            setImageError(false)
-            setImageUrl(data.image)
-          }
-        }
-      })
-      .catch((err) => {
-        if (!cancelled.value) console.error('Error fetching recipe image:', err)
-      })
-    return () => { cancelled.value = true }
-  }, [imageError])
+  const hasValidRecipeId =
+    normalizedRecipeId != null &&
+    (typeof normalizedRecipeId === 'number'
+      ? Number.isFinite(normalizedRecipeId) &&
+        normalizedRecipeId > 0
+      : String(normalizedRecipeId).trim().length > 0)
 
-  const getContainerClasses = () => {
+  const getContainerStyle = () => {
     switch (cardType) {
       case 'vertical':
-        return 'w-36 aspect-[1/2]'
+        return {
+          width: 144,
+          aspectRatio: 0.5,
+        }
+
       case 'square':
-        return 'w-full aspect-square'
+        return {
+          width: '100%',
+          aspectRatio: 1,
+        }
+
       case 'horizontal':
-        return 'w-full h-24 flex-row'
+        return {
+          width: '100%',
+          aspectRatio: 2.38,
+        }
+
       default:
-        return 'w-36 aspect-[1/2]'
+        return {
+          width: 144,
+          aspectRatio: 0.5,
+        }
     }
   }
 
@@ -115,6 +89,8 @@ export default function RecipeCard({
         return 'rounded-xl'
       case '2xl':
         return 'rounded-2xl'
+      case '3xl':
+        return 'rounded-3xl'
       default:
         return 'rounded-xl'
     }
@@ -124,10 +100,13 @@ export default function RecipeCard({
     switch (cardType) {
       case 'vertical':
         return 'text-base font-bold tracking-tighter leading-tighter'
+
       case 'square':
-        return 'text-base font-extrabold leading-tight tracking-tighter'
+        return 'text-base font-bold tracking-tighter leading-tighter'
+
       case 'horizontal':
-        return 'text-base font-bold tracking-tight'
+        return 'text-base font-bold tracking-tighter leading-tighter'
+
       default:
         return 'text-lg font-bold tracking-tight'
     }
@@ -137,38 +116,153 @@ export default function RecipeCard({
     switch (cardType) {
       case 'vertical':
         return 'px-2 py-2'
+
       case 'square':
-        return 'px-4 py-5'
+        return 'px-3 py-3'
+
       case 'horizontal':
         return 'px-3 py-3'
+
       default:
         return 'px-3 py-3'
     }
   }
 
-  const handleActionPress = () => {
-    setIsAdded(!isAdded)
-  }
-
-  const handleCardPress = async () => {
-    // Track the tap FIRST
-    if (id) {
-      await trackRecipeCardTap(id)
-      console.log('Tracked tap for recipe:', id)
-    }
-
-    // Then navigate
-    if (onPress) {
-      onPress()
-    } else if (id) {
-      router.push(`/recipe/${id}`)
-    }
-  }
-
-  const containerClasses = getContainerClasses()
+  const containerStyle = getContainerStyle()
   const roundedClass = getRoundedClass()
   const titleClasses = getTitleClasses()
   const titlePadding = getTitlePadding()
+
+  // Use image prop if valid, otherwise fetch from DB
+  useEffect(() => {
+    const cancelled = { value: false }
+
+    const trimmedImage = image?.trim()
+
+    if (
+      trimmedImage &&
+      trimmedImage !== 'undefined' &&
+      trimmedImage !== 'null'
+    ) {
+      setImageUrl(trimmedImage)
+      setImageError(false)
+      setDbFetched(false)
+    } else if (hasValidRecipeId) {
+      supabase
+        .from('recipes')
+        .select('image')
+        .eq('id', normalizedRecipeId)
+        .maybeSingle()
+        .then(({ data, error }) => {
+          if (!cancelled.value) {
+            if (error) {
+              console.error(
+                'Error fetching recipe image:',
+                error
+              )
+            } else if (data?.image) {
+              setImageUrl(data.image)
+            }
+          }
+        })
+        .catch((err) => {
+          if (!cancelled.value) {
+            console.error(
+              'Error fetching recipe image:',
+              err
+            )
+          }
+        })
+    }
+
+    return () => {
+      cancelled.value = true
+    }
+  }, [
+    recipeId,
+    image,
+    hasValidRecipeId,
+    normalizedRecipeId,
+  ])
+
+  // If the image URL fails to load and we haven't tried DB yet
+  useEffect(() => {
+    if (
+      !imageError ||
+      dbFetched ||
+      !hasValidRecipeId
+    ) {
+      return
+    }
+
+    setDbFetched(true)
+
+    const cancelled = { value: false }
+
+    supabase
+      .from('recipes')
+      .select('image')
+      .eq('id', normalizedRecipeId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!cancelled.value) {
+          if (error) {
+            console.error(
+              'Error fetching recipe image:',
+              error
+            )
+          } else if (data?.image) {
+            setImageError(false)
+            setImageUrl(data.image)
+          }
+        }
+      })
+      .catch((err) => {
+        if (!cancelled.value) {
+          console.error(
+            'Error fetching recipe image:',
+            err
+          )
+        }
+      })
+
+    return () => {
+      cancelled.value = true
+    }
+  }, [
+    imageError,
+    dbFetched,
+    hasValidRecipeId,
+    normalizedRecipeId,
+  ])
+
+  const handleCardPress = async () => {
+    if (!onPress && !hasValidRecipeId) {
+      console.warn(
+        '[RecipeCard] Press ignored: missing valid recipeId.'
+      )
+      return
+    }
+
+    // Track FIRST
+    if (hasValidRecipeId) {
+      await trackRecipeCardTap(
+        normalizedRecipeId as any
+      )
+
+      console.log(
+        'Tracked tap for recipe:',
+        normalizedRecipeId
+      )
+    }
+
+    // Navigate second
+    if (onPress) {
+      onPress()
+    } else if (hasValidRecipeId) {
+      router.push(`/recipe/${normalizedRecipeId}`)
+    }
+  }
 
   const imageSource =
     imageError || !imageUrl
@@ -178,7 +272,9 @@ export default function RecipeCard({
   return (
     <Pressable
       onPress={handleCardPress}
-      className={`${containerClasses} ${roundedClass} ${backgroundColor} overflow-hidden relative`}
+      disabled={!onPress && !hasValidRecipeId}
+      style={containerStyle}
+      className={`${roundedClass} ${backgroundColor} overflow-hidden relative`}
     >
       <Image
         source={imageSource}
@@ -186,37 +282,30 @@ export default function RecipeCard({
         resizeMode="cover"
         onError={() => setImageError(true)}
       />
-      
-      <View className="absolute inset-0 justify-end">
-  <LinearGradient
-    colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']}
-    start={{ x: 0.5, y: 1 }}
-    end={{ x: 0.5, y: 0 }}
-    className="w-full"
-  >
-    <View className={titlePadding}>
-      <Text
-        className={`text-white ${titleClasses}`}
-        numberOfLines={2}
-      >
-        {title}
-      </Text>
-    </View>
-  </LinearGradient>
-</View>
 
+      <View className="absolute inset-0 justify-end">
+        <LinearGradient
+          colors={[
+            'rgba(0,0,0,0.7)',
+            'rgba(0,0,0,0)',
+          ]}
+          start={{ x: 0.5, y: 1 }}
+          end={{ x: 0.5, y: 0 }}
+          className="w-full"
+        >
+          <View className={titlePadding}>
+            <Text
+              className={`text-white ${titleClasses}`}
+              numberOfLines={2}
+            >
+              {title}
+            </Text>
+          </View>
+        </LinearGradient>
+      </View>
 
       {showActionButton && (
-        <Pressable
-          onPress={handleActionPress}
-          className={`absolute ${
-            cardType === 'square' ? 'bottom-4' : 'top-3'
-          } right-3 bg-white rounded-full p-1 shadow-md`}
-        >
-          <View className="w-6 h-6 items-center justify-center">
-            {isAdded ? <CheckIcon /> : <PlusIcon />}
-          </View>
-        </Pressable>
+        <PlusButton recipeId={normalizedRecipeId} variant="card" style={{ top: 12, right: 12 }} />
       )}
     </Pressable>
   )

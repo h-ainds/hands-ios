@@ -22,7 +22,9 @@ export function useUsageTracking() {
   useEffect(() => {
     if (!storageKey) return
     AsyncStorage.getItem(storageKey)
-      .then((raw) => { if (raw) setUsage(JSON.parse(raw)) })
+      .then((raw) => {
+        if (raw) setUsage(JSON.parse(raw))
+      })
       .catch(console.error)
   }, [storageKey])
 

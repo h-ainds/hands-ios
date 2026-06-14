@@ -1,6 +1,5 @@
-import { Image, Pressable, ActivityIndicator, ScrollView } from 'react-native'
+import { Pressable, ActivityIndicator, ScrollView } from 'react-native'
 import { Text, View } from 'react-native'
-import { LinearGradient } from 'expo-linear-gradient'
 import { useRecipes } from '@/hooks/useRecipes'
 import { useRouter } from 'expo-router'
 import { useEffect, useState, useCallback } from 'react'
@@ -12,7 +11,6 @@ import { useAuth } from '@/context/AuthContext'
 import ChatHistorySheet from '@/components/ChatHistorySheet'
 import { SymbolView } from 'expo-symbols'
 import { useFocusEffect } from 'expo-router'
-
 export default function HomeScreen() {
   const { recipes, loading, error } = useRecipes()
   const router = useRouter()
@@ -72,16 +70,49 @@ export default function HomeScreen() {
         return
       }
 
-      console.log('Recent recipes loaded:', recent?.length || 0)
-      if (recent && recent.length > 0) {
-        console.log('Recent recipes data:', recent?.slice(0, 3).map((r: any) => ({ 
-          id: r.id, 
-          title: r.title?.substring(0, 30) + '...', 
-          viewed_at: r.viewed_at 
-        })))
+      const recentList = Array.isArray(recent) ? recent : []
+
+      // Strict sanitization:
+      // 1) keep only rows with a plausible numeric recipes.id
+      // 2) rehydrate from recipes table (source of truth) to ensure backing rows exist
+      const orderedIds = recentList
+        .map((r: any) => (r?.id != null ? Number(r.id) : NaN))
+        .filter((id: number) => Number.isFinite(id) && id > 0)
+
+      if (orderedIds.length === 0) {
+        console.warn('[Home][Recents] No valid recent recipe IDs returned from RPC.')
+        setRecentRecipes([])
+        return
       }
-      
-      setRecentRecipes(recent as Recipe[] || [])
+
+      const uniqueIds = Array.from(new Set(orderedIds))
+      const { data: recipeRows, error: recipeError } = await supabase
+        .from('recipes')
+        .select('id,title,image,caption,steps,tags,created_at,updated_at,searchable_title,url,ingredients')
+        .in('id', uniqueIds)
+
+      if (recipeError) {
+        console.error('[Home][Recents] Failed to rehydrate recents from recipes:', recipeError)
+        // Fail closed: don't render potentially orphaned/blank cards.
+        setRecentRecipes([])
+        return
+      }
+
+      const byId = new Map<number, Recipe>()
+      ;(recipeRows as Recipe[] | null | undefined)?.forEach((row) => {
+        if (row?.id != null) byId.set(Number(row.id), row)
+      })
+
+      const hydratedOrdered = orderedIds
+        .map((id) => byId.get(id))
+        .filter((r): r is Recipe => Boolean(r && r.id && r.title))
+
+      const droppedCount = orderedIds.length - hydratedOrdered.length
+      if (droppedCount > 0) {
+        console.warn(`[Home][Recents] Dropped ${droppedCount} orphan/blank recent item(s) before render.`)
+      }
+
+      setRecentRecipes(hydratedOrdered.slice(0, 9))
     } catch (error) {
       console.error('Error in loadRecentRecipes:', error)
     } finally {
@@ -136,7 +167,7 @@ export default function HomeScreen() {
   className="absolute w-12 h-12 rounded-full bg-white items-center justify-center z-50 left-4 top-[50px] shadow-hands"
 >
   <SymbolView
-    name="message"
+    name="clock.arrow.trianglehead.counterclockwise.rotate.90"
     size={23}
     weight="semibold"
     tintColor="#000000"
@@ -156,52 +187,66 @@ export default function HomeScreen() {
   />
 </Pressable>
 
-      <ScrollView className="flex-1" contentContainerClassName="pb-20">
-        {/* Hero Section */}
-        <View className="w-full">
-          {heroLoading ? (
-            <View className="h-[54vh] bg-gray-200 justify-center items-center">
-              <ActivityIndicator size="large" />
-            </View>
-          ) : heroRecipe ? (
-            <Pressable onPress={() => router.push(`/recipe/${heroRecipe.id}`)}>
-              <View className="relative">
-                <Image
-                  source={{ uri: heroRecipe.image ?? undefined }}
-                  className="w-full h-[54vh]"
-                  resizeMode="cover"
-                />
-                {/* Gradient Overlay */}
-                <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.4)']}
-                locations={[0.5, 1]}
-                style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                top: 0,
-                bottom: 0,
-                }}
-               pointerEvents="none"
-               />
-                {/* Hero TEXT */}
-                <View className="absolute bottom-0 p-4">
-                  <Text className="text-3xl text-white font-extrabold tracking-tighter leading-none">
-                    {heroRecipe.title}
-                  </Text>
-                </View>
+      <ScrollView className="flex-1" contentContainerClassName="pb-20 pt-[110px]">
+        {/* Quick Actions */}
+        <View className="flex-row gap-3 px-4 mb-5">
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: '/ask',
+                params: { prompt: "Find 3 new recipes I'd be excited to cook this week." },
+              })
+            }
+            className="flex-1 flex-row items-center justify-center gap-1 bg-white rounded-full py-4 shadow-drop"
+          >
+            <SymbolView name="fork.knife" size={18} weight="semibold" tintColor="#000000" />
+            <Text className="text-base font-semibold text-black">Plan meals</Text>
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: '/ask',
+                params: { prompt: 'Can you make me a one-week grocery list for healthy meals?' },
+              })
+            }
+            className="flex-1 flex-row items-center justify-center gap-1 bg-white rounded-full py-4 shadow-drop"
+          >
+            <SymbolView name="cart" size={18} weight="semibold" tintColor="#000000" />
+            <Text className="text-base font-semibold text-black">Create</Text>
+          </Pressable>
+        </View>
+
+        {/* Today Section */}
+        <View className="pb-4">
+          <Text className="text-2xl font-bold tracking-tighter mb-3 px-4">
+            Today
+          </Text>
+          <View className="px-4">
+            {heroLoading ? (
+              <View className="w-full aspect-[2.38] bg-gray-200 rounded-xl justify-center items-center">
+                <ActivityIndicator size="large" />
               </View>
-            </Pressable>
-          ) : (
-            <View className="h-[56vh] bg-gray-200 justify-center items-center">
-              <Text className="text-gray-600">No recipe available</Text>
-            </View>
-          )}
+            ) : heroRecipe ? (
+              <RecipeCard
+                recipeId={heroRecipe.id}
+                title={heroRecipe.title}
+                image={heroRecipe.image ?? undefined}
+                cardType="horizontal"
+                rounded="3xl"
+                showActionButton
+                onPress={() => router.push(`/recipe/${heroRecipe.id}`)}
+              />
+            ) : (
+              <View className="w-full aspect-[2.38] bg-gray-200 rounded-xl justify-center items-center">
+                <Text className="text-gray-600">No recipe available</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Recent Recipes Section */}
         <View className="py-5">
-          <Text className="text-2xl font-bold tracking-tighter mb-2 px-4">
+          <Text className="text-2xl font-bold tracking-tighter mb-3 px-4">
             Recents
           </Text>
           {recentLoading ? (
@@ -216,14 +261,16 @@ export default function HomeScreen() {
               contentContainerClassName="gap-2.5">
               {recentRecipes && recentRecipes.length > 0 ? (
                 recentRecipes.slice(0, 10).map((recipe: Recipe) => (
-                  <View key={recipe.id}>
-                    <RecipeCard
-                      title={recipe.title}
-                      image={recipe.image ?? undefined}
-                      cardType="vertical"
-                      rounded="xl"
-                      onPress={() => router.push(`/recipe/${recipe.id}`)}/>
-                  </View>
+                  <RecipeCard
+                    key={recipe.id}
+                    recipeId={recipe.id}
+                    title={recipe.title}
+                    image={recipe.image ?? undefined}
+                    cardType="vertical"
+                    rounded="2xl"
+                    showActionButton
+                    onPress={() => router.push(`/recipe/${recipe.id}`)}
+                  />
                 ))
               ) : (
                 <Text className="text-gray-400 text-base">
@@ -251,14 +298,16 @@ export default function HomeScreen() {
               contentContainerClassName="gap-2.5">
               {ourPicks.length > 0 ? (
                 ourPicks.map((recipe: Recipe) => (
-                  <View key={recipe.id}>
-                    <RecipeCard
-                      title={recipe.title}
-                      image={recipe.image ?? undefined}
-                      cardType="vertical"
-                      rounded="xl"
-                      onPress={() => router.push(`/recipe/${recipe.id}`)}/>
-                  </View>
+                  <RecipeCard
+                    key={recipe.id}
+                    recipeId={recipe.id}
+                    title={recipe.title}
+                    image={recipe.image ?? undefined}
+                    cardType="vertical"
+                    rounded="2xl"
+                    showActionButton
+                    onPress={() => router.push(`/recipe/${recipe.id}`)}
+                  />
                 ))
               ) : (
                 <Text className="text-gray-400 text-base">
@@ -271,7 +320,7 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* Composer Fixed at Bottom */}
-      <View className="absolute flex-row items-center bottom-4">
+      <View className="absolute flex-row items-center bottom-4 shadow-drop">
         <Composer
           onAskPress={handleAskPress}
         />

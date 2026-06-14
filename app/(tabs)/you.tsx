@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { View, Text, Image, Pressable, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
@@ -6,17 +7,65 @@ import { supabase } from '@/lib/supabase/client'
 import { useRouter } from 'expo-router'
 import { SymbolView } from 'expo-symbols'
 import { clearAllUserData } from '@/lib/storage'
+import { getUserProfile } from '@/lib/auth'
 import Purchases from 'react-native-purchases'
-import RevenueCatUI from 'react-native-purchases-ui'
+import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui'
 
 export default function ProfileScreen() {
   const { user } = useAuth()
   const { isPro } = useSubscription()
   const router = useRouter()
+  const [profileFirstName, setProfileFirstName] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadProfileName() {
+      if (!user?.id) {
+        setProfileFirstName(null)
+        return
+      }
+
+      const profile = await getUserProfile(user.id)
+      const name =
+        typeof profile?.first_name === 'string' && profile.first_name.trim()
+          ? profile.first_name.trim()
+          : null
+
+      if (!cancelled) {
+        setProfileFirstName(name)
+      }
+    }
+
+    loadProfileName()
+
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.replace('/')
+  }
+
+  const handleUpgrade = async () => {
+    try {
+      const offerings = await Purchases.getOfferings()
+      console.log('[RC] Current offering:', offerings.current?.identifier ?? 'null')
+      console.log('[RC] Available packages:', offerings.current?.availablePackages?.map(p => p.identifier) ?? [])
+
+      if (!offerings.current) {
+        Alert.alert('Subscriptions Unavailable', 'Subscription plans are being set up. Please try again soon.')
+        return
+      }
+
+      const result = await RevenueCatUI.presentPaywall()
+      console.log('[RC] Paywall result:', result)
+    } catch (e: any) {
+      console.error('[RC] presentPaywall error:', JSON.stringify(e))
+      Alert.alert('Error', `Could not open paywall: ${e?.message ?? 'Unknown error'}`)
+    }
   }
 
   const handleDeleteAccount = () => {
@@ -94,7 +143,11 @@ export default function ProfileScreen() {
   }
 
   const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture
-  const firstName = user?.user_metadata?.first_name || 'You'
+  const firstName =
+    profileFirstName ||
+    (typeof user?.user_metadata?.first_name === 'string' && user.user_metadata.first_name.trim()
+      ? user.user_metadata.first_name.trim()
+      : 'You')
   const email = user?.email || ''
 
   return (
@@ -125,7 +178,7 @@ export default function ProfileScreen() {
           </Pressable>
         ) : (
           <Pressable
-            onPress={() => RevenueCatUI.presentPaywall()}
+            onPress={handleUpgrade}
             className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
           >
             <SymbolView name="star" size={20} tintColor="#6CD401" />
@@ -141,6 +194,15 @@ export default function ProfileScreen() {
         >
           <SymbolView name="brain.head.profile" size={20} tintColor="#000" />
           <Text className="text-black ml-3 text-xl font-bold flex-1">Memory</Text>
+          <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
+        </Pressable>
+
+        <Pressable
+          onPress={() => router.push('/favorites')}
+          className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
+        >
+          <SymbolView name="heart" size={20} tintColor="#000" />
+          <Text className="text-black ml-3 text-xl font-bold flex-1">Favorites</Text>
           <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
         </Pressable>
 

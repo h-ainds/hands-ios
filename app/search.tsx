@@ -120,14 +120,14 @@ export default function SearchScreen() {
           ItemSeparatorComponent={() => <View className="h-4" />}
           renderItem={({ item }) => (
             <View className="flex-1">
-              <Pressable onPress={() => router.push(`/recipe/${item.id}` as any)}>
-                <RecipeCard
-                  title={item.title}
-                  image={item.image || undefined}
-                  cardType="square"
-                  onPress={() => router.push(`/recipe/${item.id}` as any)}
-                />
-              </Pressable>
+              <RecipeCard
+                recipeId={item.id}
+                title={item.title}
+                image={item.image || undefined}
+                cardType="square"
+                showActionButton
+                onPress={() => router.push(`/recipe/${item.id}` as any)}
+              />
             </View>
           )}
         />

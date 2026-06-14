@@ -2,6 +2,7 @@ import "./global.css"
 import { useEffect } from 'react'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
+import { FavoritesProvider } from '@/context/FavoritesContext'
 import { SubscriptionProvider } from '@/context/SubscriptionContext'
 import { View, ActivityIndicator } from 'react-native'
 
@@ -51,6 +52,7 @@ function RootLayoutNav() {
       <Stack.Screen name="ask" options={{ headerShown: false }} />
       <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
       <Stack.Screen name="search" options={{ headerShown: false }} />
+      <Stack.Screen name="favorites" options={{ headerShown: false }} />
       <Stack.Screen name="verify-email" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding-profile" options={{ headerShown: false }} />
       <Stack.Screen name="memory" options={{ headerShown: false }} />
@@ -61,9 +63,11 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <SubscriptionProvider>
-        <RootLayoutNav />
-      </SubscriptionProvider>
+      <FavoritesProvider>
+        <SubscriptionProvider>
+          <RootLayoutNav />
+        </SubscriptionProvider>
+      </FavoritesProvider>
     </AuthProvider>
   )
 }
