@@ -13,6 +13,7 @@ export interface RecipeCard {
   title: string
   image: string | null
   caption: string | null
+  tags: string[] | null
 }
 
 /**

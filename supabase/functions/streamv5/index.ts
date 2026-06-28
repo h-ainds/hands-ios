@@ -2,10 +2,9 @@ import "@supabase/functions-js/edge-runtime"
 import { createClient } from "@supabase/supabase-js"
 import { SYSTEM_PROMPT, TOOLS } from "./agent.ts"
 import { deduplicateByRecipeId } from "./search.ts"
-import type { SearchRow, LabelResult } from "./search.ts"
+import type { SearchRow, LabelResult, DeduplicateResult } from "./search.ts"
 import type {
   ServerEvent,
-  RecipeCard,
   SearchRecipesOutput,
   GetRecipeDetailsOutput,
 } from "../../../types/chat.ts"
@@ -23,15 +22,16 @@ const MAX_ROUNDS  = 5   // guard against runaway tool loops
 
 // ── Embedding ─────────────────────────────────────────────────────────────────
 
-async function embed(text: string, apiKey: string): Promise<number[]> {
+// Batch all queries into one API call; order of returned embeddings matches input.
+async function embedBatch(texts: string[], apiKey: string): Promise<number[][]> {
   const res = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: EMBED_MODEL, input: text, dimensions: EMBED_DIMS }),
+    body: JSON.stringify({ model: EMBED_MODEL, input: texts, dimensions: EMBED_DIMS }),
   })
-  if (!res.ok) throw new Error(`embed ${res.status}: ${await res.text()}`)
+  if (!res.ok) throw new Error(`embedBatch ${res.status}: ${await res.text()}`)
   const { data } = await res.json()
-  return data[0].embedding as number[]
+  return (data as Array<{ embedding: number[] }>).map((d) => d.embedding)
 }
 
 // ── Tool executors ────────────────────────────────────────────────────────────
@@ -43,12 +43,18 @@ async function execSearchRecipes(
   args: { searches: Array<{ label: string; query: string }> },
   supabase: SupabaseClient,
   openAiKey: string,
-): Promise<{ cards: RecipeCard[]; unmatched: string[]; toolOutput: SearchRecipesOutput }> {
+): Promise<{
+  matched: DeduplicateResult["matched"]
+  unmatched: string[]
+}> {
+  // One embeddings API call for all queries — no diet/allergen args.
+  const embeddings = await embedBatch(args.searches.map((s) => s.query), openAiKey)
+
+  // Parallel RPC per label using its pre-computed embedding.
   const labelResults: LabelResult[] = await Promise.all(
-    args.searches.map(async ({ label, query }) => {
-      const embedding = await embed(query, openAiKey)
+    args.searches.map(async ({ label, query }, i) => {
       const { data, error } = await supabase.rpc("search_recipes_hybrid", {
-        query_embedding: embedding,
+        query_embedding: embeddings[i],
         query_text: query,
         match_count: 5,
       })
@@ -57,14 +63,7 @@ async function execSearchRecipes(
     }),
   )
 
-  const { matched, unmatched } = deduplicateByRecipeId(labelResults)
-  const cards = matched.map((m) => m.recipe)
-
-  return {
-    cards,
-    unmatched,
-    toolOutput: { recipes: cards, total_found: cards.length },
-  }
+  return deduplicateByRecipeId(labelResults)
 }
 
 async function execGetRecipeDetails(
@@ -192,17 +191,25 @@ Deno.serve(async (req) => {
             })
 
             if (call.name === "search_recipes") {
-              const { cards, unmatched, toolOutput } = await execSearchRecipes(args, supabase, openAiKey)
+              const { matched, unmatched } = await execSearchRecipes(args, supabase, openAiKey)
+              const cards = matched.map((m) => m.recipe)
 
+              // Rich payload → client: image, caption, tags for card rendering.
+              const toolOutput: SearchRecipesOutput = { recipes: cards, total_found: cards.length }
               emit({ type: "tool_result", tool_use_id: callId, output: toolOutput })
               if (cards.length > 0) emit({ type: "recipe_cards", items: cards })
 
-              // Give the model a compact summary so it knows what was found / missed.
+              // Compact payload → model: only query_label + recipe_id + title.
+              // Image, caption, and tags are intentionally excluded from model context.
               functionOutputs.push({
                 type: "function_call_output",
                 call_id: callId,
                 output: JSON.stringify({
-                  found: cards.map((c) => ({ id: c.id, title: c.title })),
+                  results: matched.map((m) => ({
+                    query_label: m.label,
+                    recipe_id: m.recipe.id,
+                    title: m.recipe.title,
+                  })),
                   unmatched,
                 }),
               })

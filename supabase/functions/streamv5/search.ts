@@ -109,6 +109,7 @@ export function deduplicateByRecipeId(results: LabelResult[]): DeduplicateResult
         title: best.title,
         image: best.image,
         caption: best.caption,
+        tags: best.tags,
       },
     })
   }
