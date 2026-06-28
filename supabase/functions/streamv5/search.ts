@@ -5,15 +5,26 @@ import type { RecipeCard } from '../../../types/chat.ts'
 
 // ── Tuning constants ────────────────────────────────────────────────────────
 
-/** Minimum cosine similarity to accept a semantic match. */
-export const SEMANTIC_SIM_MIN = 0.70
+/** Minimum cosine similarity to accept a semantic match outright. */
+export const SEMANTIC_SIM_MIN = 0.75
 
 /**
- * Minimum RRF score to accept a keyword-dominant match when semantic_sim is
- * below SEMANTIC_SIM_MIN. With default k=60 this is equivalent to keyword
- * rank ≤ 10: 1/(60+10) ≈ 0.0143.
+ * Minimum RRF score to accept a keyword-dominant match.
+ * Equivalent to keyword rank ≤ 10 with default k=60: 1/(60+10) ≈ 0.0143.
  */
 export const RRF_SCORE_MIN = 1 / (60 + 10)
+
+/**
+ * Minimum semantic_sim required for a *hybrid* hit (recipe appeared in both
+ * CTEs) that is passing via keyword rank rather than SEMANTIC_SIM_MIN.
+ *
+ * Without this floor, a nonsense query that contains one real word (e.g.
+ * "marshmallow") can land at keyword rank #1 and sneak through the RRF gate
+ * despite very low semantic relevance (~0.46). A pure keyword-only hit
+ * (semantic_sim === 0 — recipe not in the semantic over-fetch pool at all)
+ * is exempt and relies solely on RRF_SCORE_MIN.
+ */
+export const SEMANTIC_SIM_FLOOR = 0.50
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -48,11 +59,24 @@ export interface DeduplicateResult {
 
 /**
  * Returns true when a row clears the quality bar.
- * Passes on either a strong semantic match OR a strong keyword rank —
- * an OR gate so one-sided hits are not systematically dropped.
+ *
+ * Pass conditions (first match wins):
+ *   1. Strong semantic: semantic_sim >= SEMANTIC_SIM_MIN
+ *   2. Strong keyword + coherent semantic: score >= RRF_SCORE_MIN AND
+ *      (semantic_sim === 0 OR semantic_sim >= SEMANTIC_SIM_FLOOR)
+ *
+ * The `semantic_sim === 0` branch allows pure keyword-only hits (recipe was
+ * not in the semantic over-fetch pool) to pass on keyword rank alone.
+ * Hybrid hits must clear SEMANTIC_SIM_FLOOR to prevent accidental keyword
+ * collisions (e.g. "durian marshmallow stew" matching "marshmallow" in an
+ * unrelated recipe) from producing cards.
  */
 export function passesThreshold(row: SearchRow): boolean {
-  return row.semantic_sim >= SEMANTIC_SIM_MIN || row.score >= RRF_SCORE_MIN
+  if (row.semantic_sim >= SEMANTIC_SIM_MIN) return true
+  if (row.score >= RRF_SCORE_MIN) {
+    return row.semantic_sim === 0 || row.semantic_sim >= SEMANTIC_SIM_FLOOR
+  }
+  return false
 }
 
 /**
