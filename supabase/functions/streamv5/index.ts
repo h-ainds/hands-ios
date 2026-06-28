@@ -8,6 +8,7 @@ import type {
   SearchRecipesOutput,
   GetRecipeDetailsOutput,
 } from "../../../types/chat.ts"
+import { SupabaseSession } from "./session.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,26 +67,42 @@ async function execSearchRecipes(
   return deduplicateByRecipeId(labelResults)
 }
 
+// Resolution path: the model matches the user's natural-language phrase
+// (e.g. "lemon bars") to the query_label / title it stored from a prior
+// search_recipes result in its context window, then calls this tool with
+// that recipe_id. An id not present in context was never shown to the user;
+// the not_found branch instructs the model to say so.
+type DetailsResult =
+  | { found: true;  output: GetRecipeDetailsOutput }
+  | { found: false; recipe_id: string }
+
 async function execGetRecipeDetails(
   args: { recipe_id: string },
   supabase: SupabaseClient,
-): Promise<GetRecipeDetailsOutput> {
+): Promise<DetailsResult> {
   const { data, error } = await supabase.rpc("get_recipe_details", {
     p_recipe_id: parseInt(args.recipe_id, 10),
   })
   if (error) throw new Error(`get_recipe_details: ${error.message}`)
-  const row = ((data ?? []) as Record<string, unknown>[])[0] ?? {}
+
+  const rows = ((data ?? []) as Record<string, unknown>[])
+  if (rows.length === 0) return { found: false, recipe_id: args.recipe_id }
+
+  const row = rows[0]
   return {
-    recipe: {
-      id: String(row.id ?? args.recipe_id),
-      title: row.title ?? "",
-      image: row.image ?? null,
-      caption: row.caption ?? null,
-      steps: row.steps ?? null,
-      // DB returns flat text[]; cast to satisfy the shared type (model reads raw JSON)
-      ingredients: row.ingredients ?? null,
-      tags: row.tags ?? null,
-      url: row.url ?? null,
+    found: true,
+    output: {
+      recipe: {
+        id:      String(row.id ?? args.recipe_id),
+        title:   String(row.title ?? ""),
+        image:   (row.image   as string   | null) ?? null,
+        caption: (row.caption as string   | null) ?? null,
+        tags:    (row.tags    as string[] | null) ?? null,
+        steps:   (row.steps   as string[] | null) ?? null,
+        // DB returns flat text[]; the model reads raw JSON — cast satisfies shared type.
+        ingredients: (row.ingredients as unknown as Record<string, string[]> | null) ?? null,
+        url:     (row.url     as string   | null) ?? null,
+      },
     },
   }
 }
@@ -133,22 +150,28 @@ Deno.serve(async (req) => {
     })
   }
 
-  let reqBody: { message?: string; conversation_id?: string; context?: unknown[] }
+  let reqBody: { message?: string; conversation_id?: string }
   try { reqBody = await req.json() } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     })
   }
 
-  const { message, conversation_id, context = [] } = reqBody
+  const { message, conversation_id } = reqBody
   if (!message || typeof message !== "string") {
     return new Response(JSON.stringify({ error: "message is required" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     })
   }
+  if (!conversation_id || typeof conversation_id !== "string") {
+    return new Response(JSON.stringify({ error: "conversation_id is required" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    })
+  }
 
   const supabase       = createClient(supabaseUrl, supabaseKey)
-  const conversationId = conversation_id ?? crypto.randomUUID()
+  const conversationId = conversation_id
+  const session        = new SupabaseSession(conversationId, supabase)
 
   const body = new ReadableStream({
     async start(controller) {
@@ -159,7 +182,10 @@ Deno.serve(async (req) => {
       try {
         emit({ type: "message_start", conversation_id: conversationId })
 
-        let input: unknown[] = [...context, { role: "user", content: message }]
+        // Load prior turns from the DB; new items accumulate from priorItems.length onward.
+        const priorItems = await session.getItems()
+        const userMsg    = { role: "user", content: message }
+        let input: unknown[] = [...priorItems, userMsg]
 
         for (let round = 0; round < MAX_ROUNDS; round++) {
           const output = await callOpenAI(input, openAiKey)
@@ -173,6 +199,8 @@ Deno.serve(async (req) => {
                 emit({ type: "text_delta", delta: part.text })
               }
             }
+            // Append final model output before breaking so it's included in newItems.
+            input = [...input, ...output]
             break
           }
 
@@ -216,18 +244,34 @@ Deno.serve(async (req) => {
             } else {
               const result = await execGetRecipeDetails(args, supabase)
 
-              emit({ type: "tool_result", tool_use_id: callId, output: result })
-              functionOutputs.push({
-                type: "function_call_output",
-                call_id: callId,
-                output: JSON.stringify(result.recipe),
-              })
+              if (!result.found) {
+                // ID was never returned by search_recipes for this user — model must say so.
+                const notFound = { not_found: true, recipe_id: result.recipe_id }
+                emit({ type: "tool_result", tool_use_id: callId, output: notFound as unknown as GetRecipeDetailsOutput })
+                functionOutputs.push({
+                  type: "function_call_output",
+                  call_id: callId,
+                  output: JSON.stringify(notFound),
+                })
+              } else {
+                emit({ type: "tool_result", tool_use_id: callId, output: result.output })
+                functionOutputs.push({
+                  type: "function_call_output",
+                  call_id: callId,
+                  output: JSON.stringify(result.output.recipe),
+                })
+              }
             }
           }
 
           // Advance input for next round: prior output + tool results
           input = [...input, ...output, ...functionOutputs]
         }
+
+        // Persist everything added this turn (user message + model output + tool I/O).
+        await session.addItems(
+          (input.slice(priorItems.length) as Record<string, unknown>[])
+        )
 
         emit({ type: "message_stop" })
       } catch (err) {
