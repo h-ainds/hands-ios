@@ -3,11 +3,8 @@ import { createClient } from "@supabase/supabase-js"
 import { SYSTEM_PROMPT, TOOLS } from "./agent.ts"
 import { deduplicateByRecipeId } from "./search.ts"
 import type { SearchRow, LabelResult, DeduplicateResult } from "./search.ts"
-import type {
-  ServerEvent,
-  SearchRecipesOutput,
-  GetRecipeDetailsOutput,
-} from "../../../types/chat.ts"
+import type { GetRecipeDetailsOutput } from "../../../types/chat.ts"
+import { makeEmitter } from "./emit.ts"
 import { SupabaseSession } from "./session.ts"
 
 const corsHeaders = {
@@ -185,13 +182,10 @@ Deno.serve(async (req) => {
 
   const body = new ReadableStream({
     async start(controller) {
-      const enc  = new TextEncoder()
-      const emit = (event: ServerEvent) =>
-        controller.enqueue(enc.encode(`data: ${JSON.stringify(event)}\n\n`))
+      const enc = new TextEncoder()
+      const { emit, flush } = makeEmitter(controller, enc)
 
       try {
-        emit({ type: "message_start", conversation_id: conversationId })
-
         // Load prior turns from the DB; new items accumulate from priorItems.length onward.
         const priorItems = await session.getItems()
         const userMsg    = { role: "user", content: message }
@@ -206,7 +200,7 @@ Deno.serve(async (req) => {
             const msg = output.find((o) => o.type === "message")
             for (const part of msg?.content ?? []) {
               if (part.type === "output_text" && part.text) {
-                emit({ type: "text_delta", delta: part.text })
+                emit({ t: "text.delta", delta: part.text })
               }
             }
             // Append final model output before breaking so it's included in newItems.
@@ -222,55 +216,59 @@ Deno.serve(async (req) => {
             const args   = JSON.parse(call.arguments ?? "{}")
 
             emit({
-              type: "tool_use",
+              t: "tool.call.started",
               tool_use_id: callId,
               tool_name: call.name as "search_recipes" | "get_recipe_details",
               input: args,
             })
 
-            if (call.name === "search_recipes") {
-              const { matched, unmatched } = await execSearchRecipes(args, supabase, openAiKey)
-              const cards = matched.map((m) => m.recipe)
+            try {
+              if (call.name === "search_recipes") {
+                const { matched, unmatched } = await execSearchRecipes(args, supabase, openAiKey)
+                const cards = matched.map((m) => m.recipe)
 
-              // Rich payload → client: image, caption, tags for card rendering.
-              const toolOutput: SearchRecipesOutput = { recipes: cards, total_found: cards.length }
-              emit({ type: "tool_result", tool_use_id: callId, output: toolOutput })
-              if (cards.length > 0) emit({ type: "recipe_cards", items: cards })
+                if (cards.length > 0) emit({ t: "recipe.cards", items: cards })
 
-              // Compact payload → model: only query_label + recipe_id + title.
-              // Image, caption, and tags are intentionally excluded from model context.
+                // Compact payload → model: only query_label + recipe_id + title.
+                // Image, caption, and tags are intentionally excluded from model context.
+                functionOutputs.push({
+                  type: "function_call_output",
+                  call_id: callId,
+                  output: JSON.stringify({
+                    results: matched.map((m) => ({
+                      query_label: m.label,
+                      recipe_id: m.recipe.id,
+                      title: m.recipe.title,
+                    })),
+                    unmatched,
+                  }),
+                })
+              } else {
+                const result = await execGetRecipeDetails(args, supabase)
+
+                if (!result.found) {
+                  // ID was never returned by search_recipes for this user — model must say so.
+                  const notFound = { not_found: true, recipe_id: result.recipe_id }
+                  functionOutputs.push({
+                    type: "function_call_output",
+                    call_id: callId,
+                    output: JSON.stringify(notFound),
+                  })
+                } else {
+                  functionOutputs.push({
+                    type: "function_call_output",
+                    call_id: callId,
+                    output: JSON.stringify(result.output.recipe),
+                  })
+                }
+              }
+            } catch (toolErr) {
+              emit({ t: "tool.call.failed", tool_use_id: callId, message: String(toolErr) })
               functionOutputs.push({
                 type: "function_call_output",
                 call_id: callId,
-                output: JSON.stringify({
-                  results: matched.map((m) => ({
-                    query_label: m.label,
-                    recipe_id: m.recipe.id,
-                    title: m.recipe.title,
-                  })),
-                  unmatched,
-                }),
+                output: JSON.stringify({ error: String(toolErr) }),
               })
-            } else {
-              const result = await execGetRecipeDetails(args, supabase)
-
-              if (!result.found) {
-                // ID was never returned by search_recipes for this user — model must say so.
-                const notFound = { not_found: true, recipe_id: result.recipe_id }
-                emit({ type: "tool_result", tool_use_id: callId, output: notFound as unknown as GetRecipeDetailsOutput })
-                functionOutputs.push({
-                  type: "function_call_output",
-                  call_id: callId,
-                  output: JSON.stringify(notFound),
-                })
-              } else {
-                emit({ type: "tool_result", tool_use_id: callId, output: result.output })
-                functionOutputs.push({
-                  type: "function_call_output",
-                  call_id: callId,
-                  output: JSON.stringify(result.output.recipe),
-                })
-              }
             }
           }
 
@@ -283,10 +281,12 @@ Deno.serve(async (req) => {
           (input.slice(priorItems.length) as Record<string, unknown>[])
         )
 
-        emit({ type: "message_stop" })
+        emit({ t: "message.completed" })
       } catch (err) {
-        emit({ type: "error", message: String(err) })
+        emit({ t: "error", message: String(err) })
       } finally {
+        emit({ t: "done" })
+        await flush()
         controller.close()
       }
     },

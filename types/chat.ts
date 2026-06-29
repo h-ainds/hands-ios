@@ -70,52 +70,52 @@ export interface GetRecipeDetailsOutput {
 
 // ─── SSE Events ────────────────────────────────────────────────────────────────
 
-/** Named union of every event type the edge function emits over SSE. */
+/** Named union of every event type the edge function emits over SSE. Discriminant: `t`. */
 export type ServerEvent =
-  | MessageStartEvent
   | TextDeltaEvent
-  | ToolUseEvent
-  | ToolResultEvent
+  | ToolCallStartedEvent
   | RecipeCardsEvent
-  | MessageStopEvent
+  | ToolCallFailedEvent
+  | MessageCompletedEvent
+  | DoneEvent
   | ErrorEvent
 
-export interface MessageStartEvent {
-  type: 'message_start'
-  conversation_id: string
-}
-
 export interface TextDeltaEvent {
-  type: 'text_delta'
+  t: 'text.delta'
   delta: string
 }
 
-export interface ToolUseEvent {
-  type: 'tool_use'
+export interface ToolCallStartedEvent {
+  t: 'tool.call.started'
   tool_use_id: string
   tool_name: 'search_recipes' | 'get_recipe_details'
-  input: SearchRecipesInput | GetRecipeDetailsInput
+  input: Record<string, unknown>
 }
 
-export interface ToolResultEvent {
-  type: 'tool_result'
-  tool_use_id: string
-  output: SearchRecipesOutput | GetRecipeDetailsOutput
-}
-
-/** Emitted after tool results resolve so the client can render cards immediately. */
+/** Emitted after search_recipes resolves so the client can render cards immediately. */
 export interface RecipeCardsEvent {
-  type: 'recipe_cards'
+  t: 'recipe.cards'
   items: RecipeCard[]
 }
 
-export interface MessageStopEvent {
-  type: 'message_stop'
+export interface ToolCallFailedEvent {
+  t: 'tool.call.failed'
+  tool_use_id: string
+  message: string
+}
+
+export interface MessageCompletedEvent {
+  t: 'message.completed'
   usage?: { input_tokens: number; output_tokens: number }
 }
 
+/** Terminal event — always the last frame on the stream. */
+export interface DoneEvent {
+  t: 'done'
+}
+
 export interface ErrorEvent {
-  type: 'error'
+  t: 'error'
   message: string
   code?: string
 }
