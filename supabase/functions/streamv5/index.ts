@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { SYSTEM_PROMPT, TOOLS } from "./agent.ts"
 import { deduplicateByRecipeId } from "./search.ts"
 import type { SearchRow, LabelResult, DeduplicateResult } from "./search.ts"
-import type { GetRecipeDetailsOutput } from "../../../types/chat.ts"
+import type { GetRecipeDetailsOutput, ServerEvent } from "../../../types/chat.ts"
 import { makeEmitter } from "./emit.ts"
 import { SupabaseSession } from "./session.ts"
 
@@ -104,7 +104,7 @@ async function execGetRecipeDetails(
   }
 }
 
-// ── OpenAI Responses API (non-streaming) ──────────────────────────────────────
+// ── OpenAI Responses API (streaming) ─────────────────────────────────────────
 
 type ResponsesOutput = Array<{
   type: string
@@ -114,17 +114,75 @@ type ResponsesOutput = Array<{
   content?: Array<{ type: string; text?: string }>
 }>
 
-// store: false — SupabaseSession is the sole state mechanism; OpenAI server-side
-// response storage and previous_response_id chaining are intentionally disabled.
-async function callOpenAI(input: unknown[], apiKey: string): Promise<ResponsesOutput> {
+// Yields parsed JSON objects from an SSE response body, one per `data:` line.
+async function* readSSEData(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
+  const reader = body.getReader()
+  const dec = new TextDecoder()
+  let buf = ""
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      const lines = buf.split("\n")
+      buf = lines.pop()!
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue
+        const raw = line.slice(6).trim()
+        if (raw === "[DONE]") return
+        try { yield JSON.parse(raw) } catch { /* skip malformed frames */ }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+// store: false — SupabaseSession is the sole state mechanism.
+// raw_model_stream_event (response.output_text.delta) → emit text.delta in real time.
+// run_item_stream_event / tool_called (response.output_item.done, function_call) → emit tool.call.started.
+// message_output_created (response.output_item.done, message) → collected; caller emits message.completed.
+async function streamRound(
+  input: unknown[],
+  apiKey: string,
+  emit: (event: ServerEvent) => void,
+): Promise<ResponsesOutput> {
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, instructions: SYSTEM_PROMPT, input, tools: TOOLS, store: false }),
+    body: JSON.stringify({ model: MODEL, instructions: SYSTEM_PROMPT, input, tools: TOOLS, store: false, stream: true }),
   })
   if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 300)}`)
-  const body = await res.json()
-  return (body.output ?? []) as ResponsesOutput
+  if (!res.body) throw new Error("OpenAI response has no body")
+
+  const output: ResponsesOutput = []
+
+  for await (const ev of readSSEData(res.body)) {
+    // Diagnostic: pin exact discriminant and tool_called arg field for this SDK version.
+    const e = ev as Record<string, unknown>
+    console.log("[stream]", e.type)
+
+    if (e.type === "response.output_text.delta") {
+      emit({ t: "text.delta", delta: String(e.delta ?? "") })
+    } else if (e.type === "response.output_item.done") {
+      const item = e.item as ResponsesOutput[number]
+      output.push(item)
+      if (item.type === "function_call") {
+        // Log full item to verify call_id + arguments field names in this SDK version.
+        console.log("[stream:tool_called]", JSON.stringify(item).slice(0, 400))
+        let parsedInput: Record<string, unknown> = {}
+        try { parsedInput = JSON.parse(item.arguments ?? "{}") } catch { /* use empty */ }
+        emit({
+          t: "tool.call.started",
+          tool_use_id: item.call_id ?? "",
+          tool_name: item.name as "search_recipes" | "get_recipe_details",
+          input: parsedInput,
+        })
+      }
+    }
+  }
+
+  return output
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -192,18 +250,12 @@ Deno.serve(async (req) => {
         let input: unknown[] = [...priorItems, userMsg]
 
         for (let round = 0; round < MAX_ROUNDS; round++) {
-          const output = await callOpenAI(input, openAiKey)
+          // Text deltas and tool.call.started events are emitted inside streamRound.
+          const output = await streamRound(input, openAiKey, emit)
           const toolCalls = output.filter((o) => o.type === "function_call")
 
-          // ── No tool calls: emit final text and stop ──────────────────────
+          // ── No tool calls: message_output_created — final text already streamed ──
           if (toolCalls.length === 0) {
-            const msg = output.find((o) => o.type === "message")
-            for (const part of msg?.content ?? []) {
-              if (part.type === "output_text" && part.text) {
-                emit({ t: "text.delta", delta: part.text })
-              }
-            }
-            // Append final model output before breaking so it's included in newItems.
             input = [...input, ...output]
             break
           }
@@ -214,13 +266,6 @@ Deno.serve(async (req) => {
           for (const call of toolCalls) {
             const callId = call.call_id!
             const args   = JSON.parse(call.arguments ?? "{}")
-
-            emit({
-              t: "tool.call.started",
-              tool_use_id: callId,
-              tool_name: call.name as "search_recipes" | "get_recipe_details",
-              input: args,
-            })
 
             try {
               if (call.name === "search_recipes") {
