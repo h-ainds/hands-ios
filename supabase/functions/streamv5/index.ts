@@ -272,7 +272,7 @@ Deno.serve(async (req) => {
                 const { matched, unmatched } = await execSearchRecipes(args, supabase, openAiKey)
                 const cards = matched.map((m) => m.recipe)
 
-                if (cards.length > 0) emit({ t: "recipe.cards", items: cards })
+                if (cards.length > 0) emit({ t: "recipe.cards", tool_use_id: callId, items: cards })
 
                 // Compact payload → model: only query_label + recipe_id + title.
                 // Image, caption, and tags are intentionally excluded from model context.

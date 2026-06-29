@@ -92,9 +92,21 @@ export interface ToolCallStartedEvent {
   input: Record<string, unknown>
 }
 
-/** Emitted after search_recipes resolves so the client can render cards immediately. */
+/**
+ * Emitted after search_recipes resolves so the client can render cards immediately.
+ *
+ * Correlation contract:
+ *   tool.call.started  →  { t: 'tool.call.started', tool_use_id: X, tool_name: 'search_recipes', … }
+ *   recipe.cards       →  { t: 'recipe.cards',       tool_use_id: X, items: […] }
+ *
+ * The client receives tool.call.started first (to create a placeholder block), then
+ * recipe.cards with the same tool_use_id to fill it in.  One tool call always
+ * produces at most one recipe.cards event; id → block mapping is 1-to-1.
+ */
 export interface RecipeCardsEvent {
   t: 'recipe.cards'
+  /** Matches the tool_use_id from the preceding tool.call.started event. */
+  tool_use_id: string
   items: RecipeCard[]
 }
 
