@@ -137,12 +137,24 @@ export interface ErrorEvent {
 export interface TextBlock {
   kind: 'text'
   content: string
+  /** True once message.completed arrives — no more deltas will be appended. */
+  final: boolean
 }
 
-export interface RecipeCardsBlock {
-  kind: 'recipe_cards'
-  items: RecipeCard[]
-}
+/**
+ * A recipe-cards block lives in three states as the stream progresses:
+ *
+ *   loading  tool.call.started received; skeleton shown until cards arrive.
+ *   ready    recipe.cards received and hydrated via matching tool_use_id.
+ *   failed   tool.call.failed received; surfaced to user as an error state.
+ *
+ * tool_use_id is present in all states so the renderer can correlate with the
+ * tool.call.started event that preceded it without needing external bookkeeping.
+ */
+export type RecipeCardsBlock =
+  | { kind: 'recipe_cards'; status: 'loading'; tool_use_id: string }
+  | { kind: 'recipe_cards'; status: 'ready';   tool_use_id: string; items: RecipeCard[] }
+  | { kind: 'recipe_cards'; status: 'failed';  tool_use_id: string; error: string }
 
 /** A discrete visual unit inside an assistant turn. */
 export type Block = TextBlock | RecipeCardsBlock
@@ -157,6 +169,8 @@ export interface AssistantTurn {
   role: 'assistant'
   /** Ordered blocks built from the SSE stream — prose and cards interleaved. */
   blocks: Block[]
+  /** True once the done event is received — the turn is fully settled. */
+  done: boolean
 }
 
 export type Turn = UserTurn | AssistantTurn
