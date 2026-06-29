@@ -117,11 +117,13 @@ type ResponsesOutput = Array<{
   content?: Array<{ type: string; text?: string }>
 }>
 
+// store: false — SupabaseSession is the sole state mechanism; OpenAI server-side
+// response storage and previous_response_id chaining are intentionally disabled.
 async function callOpenAI(input: unknown[], apiKey: string): Promise<ResponsesOutput> {
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, instructions: SYSTEM_PROMPT, input, tools: TOOLS }),
+    body: JSON.stringify({ model: MODEL, instructions: SYSTEM_PROMPT, input, tools: TOOLS, store: false }),
   })
   if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 300)}`)
   const body = await res.json()
@@ -150,14 +152,22 @@ Deno.serve(async (req) => {
     })
   }
 
-  let reqBody: { message?: string; conversation_id?: string }
+  // SupabaseSession is the only state mechanism. Reject previous_response_id at
+  // the boundary so mixing the two is impossible by construction.
+  let reqBody: { message?: string; conversation_id?: string; previous_response_id?: unknown }
   try { reqBody = await req.json() } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     })
   }
 
-  const { message, conversation_id } = reqBody
+  const { message, conversation_id, previous_response_id } = reqBody
+  if (previous_response_id !== undefined) {
+    return new Response(
+      JSON.stringify({ error: "previous_response_id is not accepted: this endpoint uses SupabaseSession for state" }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    )
+  }
   if (!message || typeof message !== "string") {
     return new Response(JSON.stringify({ error: "message is required" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
