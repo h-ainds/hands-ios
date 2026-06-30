@@ -199,8 +199,8 @@ export function useRecipeChat(
           : userMessage;
 
         const requestBody: Record<string, unknown> = {
-          prompt: promptForModel,
-          context: contextSnapshot,
+          message: promptForModel,
+          conversation_id: activeConversationId,
         };
         if (isImageSend && payload?.imageBase64) {
           requestBody.imageBase64 = payload.imageBase64;
@@ -238,84 +238,65 @@ export function useRecipeChat(
         }
 
         let accumulatedText = "";
-        let outputItems: unknown[] = [];
+        // Recipe cards collected during the stream; flushed to state after done.
+        const streamedCards: RecipeCardData["recipes"]["items"][] = [];
+
+        const processLine = (data: string) => {
+          if (!data || data === "[DONE]") return;
+          let event: Record<string, unknown>;
+          try { event = JSON.parse(data) as Record<string, unknown>; } catch { return; }
+
+          // streamv5 ServerEvent format — discriminant field is `t`
+          if (event.t === "text.delta") {
+            accumulatedText += (event.delta as string) ?? "";
+            if (isMountedRef.current) {
+              const text = accumulatedText;
+              setMessages((prev) =>
+                prev.map((msg, idx) =>
+                  idx === prev.length - 1 ? { ...msg, content: text } : msg,
+                ),
+              );
+            }
+          } else if (event.t === "recipe.cards") {
+            const items = (event.items as any[]) ?? [];
+            if (items.length > 0) {
+              streamedCards.push(
+                items.map((item: any) => ({
+                  id: String(item.id ?? ""),
+                  title: String(item.title ?? ""),
+                  caption: item.caption ?? "",
+                  image: item.image ?? "",
+                })),
+              );
+            }
+          }
+        };
 
         if (response.body) {
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let buffer = "";
-          let currentEventType = "";
 
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split("\n");
             buffer = lines.pop() ?? "";
-
             for (const line of lines) {
-              if (line.startsWith("event: ")) {
-                currentEventType = line.slice(7).trim();
-              } else if (line.startsWith("data: ")) {
-                const data = line.slice(6).trim();
-                if (!data || data === "[DONE]") {
-                  currentEventType = "";
-                  continue;
-                }
-                try {
-                  const event = JSON.parse(data) as Record<string, unknown>;
-                  const eventType =
-                    (event.type as string) ?? currentEventType;
-
-                  if (eventType === "response.output_text.delta") {
-                    accumulatedText += (event.delta as string) ?? "";
-                    if (isMountedRef.current) {
-                      const text = accumulatedText;
-                      setMessages((prev) =>
-                        prev.map((msg, idx) =>
-                          idx === prev.length - 1
-                            ? { ...msg, content: text }
-                            : msg,
-                        ),
-                      );
-                    }
-                  } else if (eventType === "response.completed") {
-                    const res = event.response as
-                      | Record<string, unknown>
-                      | undefined;
-                    outputItems = (res?.output as unknown[]) ?? [];
-                  }
-                } catch {
-                  // Ignore malformed SSE lines
-                }
-                currentEventType = "";
-              }
+              if (line.startsWith("data: ")) processLine(line.slice(6).trim());
             }
           }
         } else {
-          // Fallback: buffer entire response (environments without streaming support)
+          // Fallback: buffer entire response (no streaming support)
           const raw = await response.text();
           for (const line of raw.split("\n")) {
-            if (!line.startsWith("data: ")) continue;
-            const data = line.slice(6).trim();
-            if (!data || data === "[DONE]") continue;
-            try {
-              const event = JSON.parse(data) as Record<string, unknown>;
-              if (event.type === "response.output_text.delta") {
-                accumulatedText += (event.delta as string) ?? "";
-              } else if (event.type === "response.completed") {
-                const res = event.response as Record<string, unknown> | undefined;
-                outputItems = (res?.output as unknown[]) ?? [];
-              }
-            } catch {}
+            if (line.startsWith("data: ")) processLine(line.slice(6).trim());
           }
           if (isMountedRef.current) {
             setMessages((prev) =>
               prev.map((msg, idx) =>
-                idx === prev.length - 1
-                  ? { ...msg, content: accumulatedText }
-                  : msg,
+                idx === prev.length - 1 ? { ...msg, content: accumulatedText } : msg,
               ),
             );
           }
@@ -324,11 +305,26 @@ export function useRecipeChat(
         clearTimeout(timeoutId);
         if (!isMountedRef.current) return;
 
-        // Extend context: prior context + user message (text only) + assistant output
+        // Flush collected recipe cards — messageIndex is the assistant message (last in state)
+        if (streamedCards.length > 0) {
+          setMessages((prev) => {
+            const assistantIdx = prev.length - 1;
+            setRecipeCards((prevCards) => [
+              ...prevCards,
+              ...streamedCards.map((items) => ({
+                messageIndex: assistantIdx,
+                recipes: { items },
+              })),
+            ]);
+            return prev;
+          });
+        }
+
+        // Context management: streamv5 uses SupabaseSession (conversation_id) for
+        // multi-turn state, so conversationContextRef is no longer the primary mechanism.
         conversationContextRef.current = [
           ...contextSnapshot,
           { role: "user", content: promptForModel },
-          ...outputItems,
         ];
 
         if (activeConversationId) {
