@@ -10,14 +10,13 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated'
-import { CARD_WIDTH, styles as card } from './recipeCardStyles'
 
 /**
- * Stage A skeleton — rendered the moment tool.call.started arrives, before
- * recipe.cards hydrates the block.  Exact same footprint as RecipeCardView so
- * the layout never shifts when the real card replaces it.
+ * Stage A skeleton — shown the moment tool.call.started arrives, before
+ * recipe.cards hydrates the block.  Exact same footprint as RecipeCard
+ * (horizontal preset: width 100%, aspectRatio 2.38) so layout never shifts.
  *
- * Reduced-motion: static grey only (no shimmer, no animation).
+ * Reduced-motion: static grey only (no shimmer).
  */
 export default function RecipeCardSkeleton() {
   const reducedMotion = useReducedMotion()
@@ -25,9 +24,8 @@ export default function RecipeCardSkeleton() {
 
   useEffect(() => {
     if (reducedMotion) return
-    // Shimmer stripe sweeps left→right across the card on the UI thread.
     tx.value = withRepeat(
-      withTiming(CARD_WIDTH * 2, { duration: 950, easing: Easing.linear }),
+      withTiming(600, { duration: 950, easing: Easing.linear }),
       -1,
       false,
     )
@@ -39,11 +37,8 @@ export default function RecipeCardSkeleton() {
   }))
 
   return (
-    <View style={card.card}>
+    <View style={local.card}>
       {!reducedMotion && (
-        // Stripe starts CARD_WIDTH off-screen to the left; translateX carries it
-        // to CARD_WIDTH off-screen to the right (full 2×CARD_WIDTH travel).
-        // card.card's overflow:hidden clips it to the rounded card shape.
         <Animated.View style={[StyleSheet.absoluteFillObject, local.stripe, shimmerStyle]}>
           <LinearGradient
             colors={['transparent', 'rgba(255,255,255,0.22)', 'transparent']}
@@ -58,6 +53,13 @@ export default function RecipeCardSkeleton() {
 }
 
 const local = StyleSheet.create({
-  // Left-offset by one card width so the stripe enters from off-screen.
-  stripe: { left: -CARD_WIDTH, width: CARD_WIDTH },
+  card: {
+    width: '100%',
+    aspectRatio: 2.38,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#E5E7EB',
+  },
+  // Stripe starts off-screen left; overflow:hidden clips it to the card shape.
+  stripe: { left: -300, width: 300 },
 })

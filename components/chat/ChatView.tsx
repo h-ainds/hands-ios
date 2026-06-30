@@ -2,8 +2,8 @@ import { useEffect, useRef } from 'react'
 import { ScrollView, Text, View } from 'react-native'
 import Markdown from 'react-native-markdown-display'
 import type { AssistantTurn, Block, Turn } from '@/types/chat'
+import RecipeCard from '@/components/RecipeCard'
 import RecipeCardSkeleton from './RecipeCardSkeleton'
-import RecipeCardView from './RecipeCardView'
 
 // ─── Markdown styles (unchanged) ──────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ function renderBlock(block: Block, i: number) {
           contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
         >
           {block.items.map((recipe) => (
-            <RecipeCardView key={recipe.id} recipe={recipe} />
+            <RecipeCard key={recipe.id} recipe={recipe} />
           ))}
         </ScrollView>
       </View>
