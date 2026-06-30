@@ -107,7 +107,7 @@ export default function ChatView({ turns, isTyping }: ChatViewProps) {
         <View key={i} className="mb-4 mt-2">
           {turn.role === 'user' ? (
             <View className="flex-row justify-end px-4">
-              <View className="max-w-[80%] bg-[#F7F7F7] rounded-3xl px-4 py-4">
+              <View className="max-w-[80%] bg-[#F7F7F7] rounded-3xl px-4 py-3">
                 <Text className="text-black text-[17px] leading-snug">{turn.content}</Text>
               </View>
             </View>
