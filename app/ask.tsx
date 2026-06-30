@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, Image, ActionSheetIOS, Alert } from 'react-native'
 
 import * as ImagePicker from 'expo-image-picker'
@@ -11,6 +11,7 @@ import { useRecipeChat } from '@/hooks/useRecipeChat'
 import { useUsageTracking } from '@/hooks/useUsageTracking'
 import { supabase } from '@/lib/supabase/client'
 import BackButton from '@/components/BackButton'
+import type { Turn, Block } from '@/types/chat'
 
 type MimeType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
 type ImageSource = 'camera' | 'library'
@@ -52,6 +53,37 @@ export default function AskScreen() {
 
   const isChatStarted = messages.length > 0
   const isTyping = status === 'connecting' || status === 'streaming' || status === 'typing'
+
+  // Adapt legacy messages/recipeCards → Turn[] for ChatView.
+  // Assistant turns get a ready RecipeCardsBlock when recipeCards has an entry for that index.
+  const turns = useMemo<Turn[]>(() =>
+    messages.map((msg, i) => {
+      if (msg.role === 'user') {
+        return { role: 'user' as const, content: msg.content }
+      }
+      const blocks: Block[] = []
+      if (msg.content) {
+        blocks.push({ kind: 'text' as const, content: msg.content, final: true })
+      }
+      const cardData = recipeCards.find((c: any) => c.messageIndex === i)
+      if (cardData?.recipes?.items?.length) {
+        blocks.push({
+          kind: 'recipe_cards' as const,
+          status: 'ready' as const,
+          tool_use_id: `legacy-${i}`,
+          items: cardData.recipes.items.map((item: any) => ({
+            id: String(item.id ?? i),
+            title: String(item.title ?? ''),
+            image: item.image ?? null,
+            caption: item.caption ?? null,
+            tags: null,
+          })),
+        })
+      }
+      return { role: 'assistant' as const, blocks, done: true }
+    }),
+    [messages, recipeCards]
+  )
   const hasContent = input.trim().length > 0 || !!attachment?.base64
 
   useEffect(() => {
@@ -299,7 +331,7 @@ export default function AskScreen() {
               </Text>
             </View>
           ) : (
-            <ChatView messages={messages} isTyping={isTyping} recipeCards={recipeCards} />
+            <ChatView turns={turns} isTyping={isTyping} />
           )}
         </View>
 
