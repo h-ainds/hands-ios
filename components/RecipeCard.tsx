@@ -21,15 +21,13 @@ import Animated, {
 import { trackRecipeCardTap } from '@/lib/supabase/track'
 import { supabase } from '@/lib/supabase/client'
 import PlusButton from '@/components/PlusButton'
-import type { RecipeCard as RecipeCardData } from '@/types/chat'
 
-interface RecipeCardProps {
-  // Rich path: full RecipeCard object from the SSE stream; renders without DB work.
-  recipe?: RecipeCardData
-  // Legacy props (used when recipe is not provided)
+export interface RecipeCardData {
   recipeId?: string | number
-  title?: string
-  image?: string
+  title: string
+  image?: string | null
+  subtitle?: string | null
+  tags?: string[] | null
   cardType?: 'vertical' | 'square' | 'horizontal'
   rounded?: 'lg' | 'xl' | '2xl' | '3xl' | 'none'
   backgroundColor?: string
@@ -38,29 +36,27 @@ interface RecipeCardProps {
 }
 
 export default function RecipeCard({
-  recipe,
-  recipeId: recipeIdProp,
-  title: titleProp,
-  image: imageProp,
+  recipeId,
+  title,
+  image,
+  subtitle,
+  tags,
   cardType = 'horizontal',
   rounded = 'xl',
   backgroundColor = 'bg-gray-300',
   showActionButton = false,
   onPress,
-}: RecipeCardProps) {
+}: RecipeCardData) {
   const router = useRouter()
   const reducedMotion = useReducedMotion()
 
-  // ── Effective values from rich or legacy path ─────────────────────────────────
-  const effectiveTitle = recipe?.title ?? titleProp ?? ''
-  const effectiveImage = recipe ? (recipe.image ?? undefined) : imageProp
-  const effectiveId = recipe?.id ?? recipeIdProp
-  const secondary = recipe ? (recipe.caption ?? recipe.tags?.[0] ?? null) : null
+  const secondary = subtitle ?? tags?.[0] ?? null
 
+  // ── Normalize recipeId ────────────────────────────────────────────────────────
   const normalizedRecipeId =
-    typeof effectiveId === 'string' && !isNaN(Number(effectiveId))
-      ? Number(effectiveId)
-      : effectiveId
+    typeof recipeId === 'string' && !isNaN(Number(recipeId))
+      ? Number(recipeId)
+      : recipeId
 
   const hasValidRecipeId =
     normalizedRecipeId != null &&
@@ -119,7 +115,7 @@ export default function RecipeCard({
   // ── DB fetch: primary (image prop absent or invalid) ──────────────────────────
   useEffect(() => {
     const cancelled = { value: false }
-    const trimmedImage = effectiveImage?.trim()
+    const trimmedImage = image?.trim()
 
     if (trimmedImage && trimmedImage !== 'undefined' && trimmedImage !== 'null') {
       setImageUrl(trimmedImage)
@@ -143,7 +139,7 @@ export default function RecipeCard({
     }
 
     return () => { cancelled.value = true }
-  }, [effectiveId, effectiveImage, hasValidRecipeId, normalizedRecipeId])
+  }, [recipeId, image, hasValidRecipeId, normalizedRecipeId])
 
   // ── DB fetch: fallback (image URL failed to load) ─────────────────────────────
   useEffect(() => {
@@ -221,7 +217,7 @@ export default function RecipeCard({
       onLayout={handleLayout}
       disabled={!onPress && !hasValidRecipeId}
       accessibilityRole="button"
-      accessibilityLabel={effectiveTitle}
+      accessibilityLabel={title}
       style={containerStyle}
       className={`${roundedClass} ${backgroundColor} overflow-hidden relative`}
     >
@@ -257,7 +253,7 @@ export default function RecipeCard({
         >
           <View style={local.textPad}>
             <Text style={local.title} numberOfLines={2} ellipsizeMode="tail">
-              {effectiveTitle}
+              {title}
             </Text>
             {secondary !== null && (
               <Text style={local.secondary} numberOfLines={1} ellipsizeMode="tail">

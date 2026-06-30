@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { ScrollView, Text, View } from 'react-native'
+import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import Markdown from 'react-native-markdown-display'
 import type { AssistantTurn, Block, Turn } from '@/types/chat'
 import RecipeCard from '@/components/RecipeCard'
@@ -44,32 +44,27 @@ function renderBlock(block: Block, i: number) {
   // recipe_cards — key on tool_use_id so the node survives loading→ready transition
   if (block.status === 'loading') {
     return (
-      <View key={`cards-${block.tool_use_id}`} className="mt-2 mb-2">
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
-        >
-          {Array.from({ length: SKELETON_COUNT }, (_, k) => (
-            <RecipeCardSkeleton key={k} />
-          ))}
-        </ScrollView>
+      <View key={`cards-${block.tool_use_id}`} style={cards.container}>
+        {Array.from({ length: SKELETON_COUNT }, (_, k) => (
+          <RecipeCardSkeleton key={k} />
+        ))}
       </View>
     )
   }
 
   if (block.status === 'ready') {
     return (
-      <View key={`cards-${block.tool_use_id}`} className="mt-2 mb-2">
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
-        >
-          {block.items.map((recipe) => (
-            <RecipeCard key={recipe.id} recipe={recipe} />
-          ))}
-        </ScrollView>
+      <View key={`cards-${block.tool_use_id}`} style={cards.container}>
+        {block.items.map((recipe) => (
+          <RecipeCard
+            key={recipe.id}
+            recipeId={recipe.id}
+            title={recipe.title}
+            image={recipe.image ?? undefined}
+            subtitle={recipe.caption ?? undefined}
+            tags={recipe.tags}
+          />
+        ))}
       </View>
     )
   }
@@ -129,3 +124,7 @@ export default function ChatView({ turns, isTyping }: ChatViewProps) {
     </ScrollView>
   )
 }
+
+const cards = StyleSheet.create({
+  container: { paddingHorizontal: 16, paddingVertical: 8, rowGap: 12 },
+})
