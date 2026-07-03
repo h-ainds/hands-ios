@@ -283,7 +283,7 @@ const local = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: -0.5,
-    lineHeight: 19,
+    lineHeight: 17,
   },
   secondary: {
     color: 'rgba(255,255,255,0.70)',

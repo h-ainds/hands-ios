@@ -61,8 +61,9 @@ function renderBlock(block: Block, i: number) {
             recipeId={recipe.id}
             title={recipe.title}
             image={recipe.image ?? undefined}
-            subtitle={recipe.caption ?? undefined}
             tags={recipe.tags}
+            rounded="3xl"
+            showActionButton
           />
         ))}
       </View>
@@ -95,7 +96,7 @@ export default function ChatView({ turns, isTyping }: ChatViewProps) {
     <ScrollView
       ref={scrollRef}
       className="flex-1"
-      contentContainerStyle={{ paddingBottom: 20 }}
+      contentContainerStyle={{ paddingBottom: 104 }} // this adjusts the bottom padding after recipe cards and llm response
       showsVerticalScrollIndicator={false}
     >
       {turns.map((turn, i) => (
