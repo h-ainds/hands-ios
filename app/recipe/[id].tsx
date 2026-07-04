@@ -37,7 +37,7 @@ export default function RecipeDetailScreen() {
 
       if (!error && data) {
         setRecipe(data)
-        
+
         if (data?.id) {
           await trackRecipeView(data.id)
           console.log('Tracked view for recipe:', data.id)
@@ -45,49 +45,11 @@ export default function RecipeDetailScreen() {
         return
       }
 
-      // Backward-compatibility fallback:
-      // if a legacy route uses featured_library.id, resolve to recipes.id.
-      const { data: featuredRow, error: featuredError } = await supabase
-        .from('featured_library')
-        .select('recipe_id')
-        .eq('id', normalizedId)
-        .maybeSingle()
-
-      if (featuredError) {
-        console.error('[RecipeDetail] featured_library fallback failed:', featuredError)
-        throw error ?? featuredError
+      if (error) {
+        console.error('[RecipeDetail] Failed loading recipe:', error)
       }
-
-      if (!featuredRow?.recipe_id) {
-        console.warn(`[RecipeDetail] No recipe found for route id=${routeId}`)
-        setRecipe(null)
-        return
-      }
-
-      console.warn(
-        `[RecipeDetail] Resolved legacy featured_library.id=${routeId} to recipes.id=${featuredRow.recipe_id}`
-      )
-
-      const { data: fallbackRecipe, error: fallbackRecipeError } = await supabase
-        .from('recipes')
-        .select('*')
-        .eq('id', featuredRow.recipe_id)
-        .maybeSingle()
-
-      if (fallbackRecipeError || !fallbackRecipe) {
-        if (fallbackRecipeError) {
-          console.error('[RecipeDetail] Failed loading fallback recipe:', fallbackRecipeError)
-        }
-        setRecipe(null)
-        return
-      }
-
-      setRecipe(fallbackRecipe)
-      
-      if (fallbackRecipe?.id) {
-        await trackRecipeView(fallbackRecipe.id)
-        console.log('Tracked view for recipe:', fallbackRecipe.id)
-      }
+      console.warn(`[RecipeDetail] No recipe found for route id=${routeId}`)
+      setRecipe(null)
     } catch (error) {
       console.error('Error loading recipe:', error instanceof Error ? error.message : JSON.stringify(error))
     } finally {
