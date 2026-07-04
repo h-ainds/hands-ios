@@ -4,8 +4,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Supabase project ID**: `lxueztdlrxoystjehjay` — use this as the `project_id` for all Supabase MCP tool calls (SQL queries, migrations, advisors) so you always target the right database.
-
 **Hands** — an Expo / React Native (iOS-first) app: an AI personal chef. Users chat for recipe ideas and get interactive recipe cards streamed inline. Backend is Supabase (Postgres + Auth + Edge Functions); the AI runs in a Deno edge function that calls the OpenAI Responses API with tool-calling over a hybrid vector+keyword recipe search.
 
 ## Commands
@@ -65,6 +63,4 @@ The chat flow spans three layers that share type contracts in **`types/chat.ts`*
 - Auth redirect setup (OAuth deep links, email confirmation) is documented in `docs/SUPABASE_AUTH_REDIRECTS.md` — non-obvious Supabase dashboard config lives there.
 
 ## ⚠️ Database safety — read before touching Supabase
-The legacy **`featured_library`** table was removed on 2026-07-03 (migration `20260703000000_drop_featured_library.sql`). Investigation showed its only linkage to `recipes` was two one-way, INSERT-only mirror triggers on `recipes` — there was never a foreign key, view, or rule that could cascade a `featured_library` deletion back into `recipes` (verified empirically before the drop). The mirror triggers, the `add_recipe_to_featured_library()` / `add_to_featured_library()` functions, and the table itself are all gone; `get_recent_recipes()` now sources purely from `recipes`.
-
-General rule still stands: before any schema/RLS/trigger change on `recipes`, inspect the linkage (triggers, rules, views, functions, RLS policies, foreign keys) with read-only introspection first, and never drop or bulk-modify without explicit confirmation.
+The **`featured_library`** table is a dangerous legacy remnant: it is linked to the main **`recipes`** table such that changes mirror between them, and **deleting `featured_library` can cascade into deleting `recipes`** (months of production data). Before any schema/RLS/trigger change, inspect the linkage (triggers, rules, views, functions, RLS policies, foreign keys) and plan/test carefully. Never drop or bulk-modify these tables without explicit confirmation. Prefer read-only introspection first; test on a branch, not production.
