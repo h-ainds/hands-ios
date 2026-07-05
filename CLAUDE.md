@@ -1,8 +1,8 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+his file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
+
+**Supabase project ID**: `lxueztdlrxoystjehjay` — use this as the `project_id` for all Supabase MCP tool calls (SQL queries, migrations, advisors) so you always target the right database.
 
 **Hands** — an Expo / React Native (iOS-first) app: an AI personal chef. Users chat for recipe ideas and get interactive recipe cards streamed inline. Backend is Supabase (Postgres + Auth + Edge Functions); the AI runs in a Deno edge function that calls the OpenAI Responses API with tool-calling over a hybrid vector+keyword recipe search.
 
