@@ -3,9 +3,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useAuth } from '@/context/AuthContext'
 import { useSubscription } from '@/context/SubscriptionContext'
 
-const FREE_MESSAGE_LIMIT = 15
-const FREE_IMAGE_LIMIT = 1
-const PRO_IMAGE_LIMIT = 3
+// Beta (through launch ~2026-09): generous daily caps so real testers never hit
+// the paywall, while a runaway/abusive user is still bounded per day.
+const FREE_MESSAGE_LIMIT = 100
+const FREE_IMAGE_LIMIT = 25
+const PRO_IMAGE_LIMIT = 50
 
 interface DailyUsage {
   messageCount: number
