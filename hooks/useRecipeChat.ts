@@ -1,9 +1,14 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { finalizeAttachment } from "@/lib/attachments";
 
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  /** Set on user turns that carried an image, so the bubble keeps showing it. */
+  attachmentId?: string;
+  /** Local uri (optimistic) or signed URL (history) for rendering the image. */
+  imageUri?: string;
 };
 
 export type RecipeCardData = {
@@ -23,8 +28,10 @@ export type StreamingStatus =
 
 export type ChatSendAttachment = {
   context?: string;
-  imageBase64?: string;
-  mimeType?: string;
+  /** Id of an already-uploaded attachment (bytes live in Storage). */
+  attachmentId?: string;
+  /** Local uri for optimistic in-bubble display after send. */
+  imageUri?: string;
 };
 
 const DEFAULT_IMAGE_CONTEXT = "What can I make with these ingredients?";
@@ -79,7 +86,12 @@ export function useRecipeChat(
   }, []);
 
   const saveMessageToConversation = useCallback(
-    async (convId: string, role: "user" | "assistant", content: string) => {
+    async (
+      convId: string,
+      role: "user" | "assistant",
+      content: string,
+      attachmentId?: string,
+    ): Promise<number | null> => {
       try {
         const { data: conv } = await supabase
           .from("conversations")
@@ -88,7 +100,10 @@ export function useRecipeChat(
           .single();
 
         const currentContent = (conv?.content as unknown[]) || [];
-        const newContent = [...currentContent, { role, content }];
+        const messageIndex = currentContent.length;
+        const message: Record<string, unknown> = { role, content };
+        if (attachmentId) message.attachment_id = attachmentId;
+        const newContent = [...currentContent, message];
 
         await supabase
           .from("conversations")
@@ -97,8 +112,11 @@ export function useRecipeChat(
             updated_at: new Date().toISOString(),
           })
           .eq("id", convId);
+
+        return messageIndex;
       } catch (err) {
         console.error("Error saving message:", err);
+        return null;
       }
     },
     [],
@@ -110,12 +128,13 @@ export function useRecipeChat(
       conversationId?: string,
       payload?: ChatSendAttachment,
     ) => {
-      if (!message.trim() && !payload?.imageBase64) return;
+      if (!message.trim() && !payload?.attachmentId) return;
 
       abortControllerRef.current?.abort();
       abortControllerRef.current = new AbortController();
 
       const userMessage = message.trim();
+      const attachmentId = payload?.attachmentId;
       let activeConversationId = conversationId || currentConversationId;
 
       // Snapshot context before this turn so we can extend it after response
@@ -124,7 +143,12 @@ export function useRecipeChat(
       if (isMountedRef.current) {
         setMessages((prev) => [
           ...prev,
-          { role: "user" as const, content: userMessage },
+          {
+            role: "user" as const,
+            content: userMessage,
+            attachmentId,
+            imageUri: payload?.imageUri,
+          },
         ]);
         setStatus("connecting");
         setError(null);
@@ -137,12 +161,18 @@ export function useRecipeChat(
             data: { user },
           } = await supabase.auth.getUser();
           if (user) {
+            const firstMessage: Record<string, unknown> = {
+              role: "user",
+              content: userMessage,
+            };
+            if (attachmentId) firstMessage.attachment_id = attachmentId;
+
             const { data, error: insertError } = await supabase
               .from("conversations")
               .insert({
-                title: userMessage.slice(0, 50) + "...",
+                title: (userMessage || (attachmentId ? "Photo" : "")).slice(0, 50) + "...",
                 user_id: user.id,
-                content: [{ role: "user", content: userMessage }],
+                content: [firstMessage],
               })
               .select("id")
               .single();
@@ -150,17 +180,25 @@ export function useRecipeChat(
             if (!insertError && data) {
               activeConversationId = data.id;
               setCurrentConversationId(data.id);
+              // First message → index 0. Bind the attachment to this bubble.
+              if (attachmentId) {
+                await finalizeAttachment(attachmentId, data.id, 0);
+              }
             }
           }
         } catch (err) {
           console.error("Error creating conversation:", err);
         }
       } else {
-        await saveMessageToConversation(
+        const messageIndex = await saveMessageToConversation(
           activeConversationId,
           "user",
           userMessage,
+          attachmentId,
         );
+        if (attachmentId && messageIndex !== null) {
+          await finalizeAttachment(attachmentId, activeConversationId, messageIndex);
+        }
       }
 
       const timeoutId = setTimeout(() => {
@@ -193,19 +231,17 @@ export function useRecipeChat(
           throw new Error("Supabase configuration missing");
         }
 
-        const isImageSend = Boolean(payload?.imageBase64);
+        const isImageSend = Boolean(attachmentId);
         const promptForModel = isImageSend
           ? payload?.context?.trim() || DEFAULT_IMAGE_CONTEXT
           : userMessage;
 
+        // Only a reference travels in the payload — the bytes are already in Storage.
         const requestBody: Record<string, unknown> = {
           message: promptForModel,
           conversation_id: activeConversationId,
         };
-        if (isImageSend && payload?.imageBase64) {
-          requestBody.imageBase64 = payload.imageBase64;
-          if (payload.mimeType) requestBody.mimeType = payload.mimeType;
-        }
+        if (attachmentId) requestBody.attachment_id = attachmentId;
 
         const response = await fetch(
           `${supabaseUrl}/functions/v1/streamv5`,

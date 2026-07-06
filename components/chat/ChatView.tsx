@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native'
 import Markdown from 'react-native-markdown-display'
 import type { AssistantTurn, Block, Turn } from '@/types/chat'
 import RecipeCard from '@/components/RecipeCard'
@@ -102,10 +102,20 @@ export default function ChatView({ turns, isTyping }: ChatViewProps) {
       {turns.map((turn, i) => (
         <View key={i} className="mb-4 mt-2">
           {turn.role === 'user' ? (
-            <View className="flex-row justify-end px-4">
-              <View className="max-w-[80%] bg-[#F7F7F7] rounded-3xl px-4 py-3">
-                <Text className="text-black text-[17px] leading-snug">{turn.content}</Text>
-              </View>
+            <View className="px-4 items-end">
+              {turn.image_uri && (
+                <Image
+                  source={{ uri: turn.image_uri }}
+                  className="w-36 rounded-3xl mb-2"
+                  style={{ aspectRatio: 1 }}
+                  resizeMode="cover"
+                />
+              )}
+              {!!turn.content && (
+                <View className="max-w-[80%] bg-[#F7F7F7] rounded-3xl px-4 py-3">
+                  <Text className="text-black text-[17px] leading-snug">{turn.content}</Text>
+                </View>
+              )}
             </View>
           ) : (
             <AssistantBubble turn={turn} />
