@@ -2,7 +2,11 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, Image, ActionSheetIOS, Alert, ActivityIndicator } from 'react-native'
 
 import * as ImagePicker from 'expo-image-picker'
-import * as ImageManipulator from 'expo-image-manipulator'
+// TEMP: expo-image-manipulator (native module) disabled so the existing dev
+// build — compiled before this module was added — runs over `expo start`
+// without a native rebuild. Restore the import + real compressForUpload body
+// once the dev client is rebuilt (`yarn ios --device`).
+// import * as ImageManipulator from 'expo-image-manipulator'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
@@ -47,13 +51,19 @@ type PersistedConversationMessage = {
 
 // Longest edge we allow before upload. Resizing here cuts upload size and,
 // downstream, vision-model latency and cost. Output is always JPEG.
-const MAX_EDGE = 1536
+// TEMP: unused while compression is stubbed (see compressForUpload below).
+// const MAX_EDGE = 1536
 
 async function compressForUpload(
   uri: string,
   width?: number,
   height?: number,
 ): Promise<{ uri: string; width?: number; height?: number }> {
+  // TEMP: pass-through no-op while expo-image-manipulator is disabled (see the
+  // import note above). Uploads the original image at full size. Restore the
+  // real downscale/compress body once the dev client is rebuilt.
+  return { uri, width, height }
+  /* Real implementation:
   // Only downscale (never upscale) — resize the longer edge to MAX_EDGE.
   const longest = Math.max(width ?? 0, height ?? 0)
   const actions =
@@ -65,6 +75,7 @@ async function compressForUpload(
     format: ImageManipulator.SaveFormat.JPEG,
   })
   return { uri: result.uri, width: result.width, height: result.height }
+  */
 }
 
 export default function AskScreen() {
