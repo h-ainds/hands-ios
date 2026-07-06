@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, Image, ActionSheetIOS, Alert } from 'react-native'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, Image, ActionSheetIOS, Alert, ActivityIndicator } from 'react-native'
 
 import * as ImagePicker from 'expo-image-picker'
+import * as ImageManipulator from 'expo-image-manipulator'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
@@ -10,16 +11,23 @@ import ChatView from '@/components/chat/ChatView'
 import { useRecipeChat } from '@/hooks/useRecipeChat'
 import { useUsageTracking } from '@/hooks/useUsageTracking'
 import { supabase } from '@/lib/supabase/client'
+import { uploadChatAttachment, signConversationAttachments } from '@/lib/attachments'
 import BackButton from '@/components/BackButton'
 import type { Turn, Block } from '@/types/chat'
 
 type MimeType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
 type ImageSource = 'camera' | 'library'
+type UploadStatus = 'uploading' | 'done' | 'error'
 
 type Attachment = {
   uri: string
-  base64: string
   mimeType: MimeType
+  width?: number
+  height?: number
+  attachmentId?: string
+  /** 0..1 upload progress. */
+  progress: number
+  status: UploadStatus
 }
 
 type PersistedRecipe = {
@@ -33,6 +41,30 @@ type PersistedConversationMessage = {
   role: 'user' | 'assistant'
   content: string
   recipes?: PersistedRecipe[]
+  attachment_id?: string
+  imageUri?: string
+}
+
+// Longest edge we allow before upload. Resizing here cuts upload size and,
+// downstream, vision-model latency and cost. Output is always JPEG.
+const MAX_EDGE = 1536
+
+async function compressForUpload(
+  uri: string,
+  width?: number,
+  height?: number,
+): Promise<{ uri: string; width?: number; height?: number }> {
+  // Only downscale (never upscale) — resize the longer edge to MAX_EDGE.
+  const longest = Math.max(width ?? 0, height ?? 0)
+  const actions =
+    longest > MAX_EDGE
+      ? [{ resize: (width ?? 0) >= (height ?? 0) ? { width: MAX_EDGE } : { height: MAX_EDGE } }]
+      : []
+  const result = await ImageManipulator.manipulateAsync(uri, actions, {
+    compress: 0.7,
+    format: ImageManipulator.SaveFormat.JPEG,
+  })
+  return { uri: result.uri, width: result.width, height: result.height }
 }
 
 export default function AskScreen() {
@@ -42,6 +74,7 @@ export default function AskScreen() {
   const [userId, setUserId] = useState<string | null>(null)
   const [conversationLoaded, setConversationLoaded] = useState(false)
   const [attachment, setAttachment] = useState<Attachment | null>(null)
+  const uploadAbortRef = useRef<AbortController | null>(null)
 
   const { messages, recipeCards, status, isLoading, sendMessage, cancelRequest, setMessages, setRecipeCards } = useRecipeChat({
     timeout: 30000,
@@ -59,7 +92,7 @@ export default function AskScreen() {
   const turns = useMemo<Turn[]>(() =>
     messages.map((msg, i) => {
       if (msg.role === 'user') {
-        return { role: 'user' as const, content: msg.content }
+        return { role: 'user' as const, content: msg.content, image_uri: msg.imageUri }
       }
       const blocks: Block[] = []
       if (msg.content) {
@@ -84,7 +117,11 @@ export default function AskScreen() {
     }),
     [messages, recipeCards]
   )
-  const hasContent = input.trim().length > 0 || !!attachment?.base64
+
+  const isUploading = attachment?.status === 'uploading'
+  const attachmentReady = attachment?.status === 'done' && !!attachment.attachmentId
+  // Send is disabled while an upload is in flight — even if text is present.
+  const canSubmit = !isUploading && (input.trim().length > 0 || attachmentReady)
 
   useEffect(() => {
     const getUser = async () => {
@@ -93,6 +130,64 @@ export default function AskScreen() {
     }
     getUser()
   }, [])
+
+  const clearAttachment = useCallback(() => {
+    uploadAbortRef.current?.abort()
+    uploadAbortRef.current = null
+    setAttachment(null)
+  }, [])
+
+  // Compress then upload eagerly on pick so the bytes are in Storage before the
+  // user hits send. Always produces a JPEG.
+  const beginUpload = useCallback(
+    async (rawUri: string, width?: number, height?: number) => {
+      uploadAbortRef.current?.abort()
+      const controller = new AbortController()
+      uploadAbortRef.current = controller
+      // Guards against a stale upload clobbering a newer pick's state.
+      const isCurrent = () => uploadAbortRef.current === controller
+
+      // Show the raw image immediately while we compress + upload.
+      setAttachment({ uri: rawUri, mimeType: 'image/jpeg', width, height, progress: 0, status: 'uploading' })
+
+      try {
+        let uid = userId
+        if (!uid) {
+          const { data } = await supabase.auth.getUser()
+          uid = data.user?.id ?? null
+        }
+        if (!uid) throw new Error('Not signed in')
+
+        const compressed = await compressForUpload(rawUri, width, height)
+        if (!isCurrent()) return
+        setAttachment((prev) =>
+          prev ? { ...prev, uri: compressed.uri, width: compressed.width, height: compressed.height } : prev
+        )
+
+        const { attachmentId } = await uploadChatAttachment({
+          uri: compressed.uri,
+          mimeType: 'image/jpeg',
+          userId: uid,
+          width: compressed.width,
+          height: compressed.height,
+          signal: controller.signal,
+          onProgress: (fraction) => {
+            if (isCurrent()) setAttachment((prev) => (prev ? { ...prev, progress: fraction } : prev))
+          },
+        })
+
+        if (!isCurrent()) return
+        setAttachment((prev) =>
+          prev ? { ...prev, attachmentId, progress: 1, status: 'done' } : prev
+        )
+      } catch (e: any) {
+        if (e?.name === 'AbortError' || !isCurrent()) return
+        setAttachment((prev) => (prev ? { ...prev, status: 'error' } : prev))
+        Alert.alert('Upload failed', 'Could not upload the image. Please try again.')
+      }
+    },
+    [userId]
+  )
 
   useEffect(() => {
     if (conversationId && !conversationLoaded) {
@@ -113,12 +208,10 @@ export default function AskScreen() {
           : undefined
 
     if (nextImageUri) {
-      setAttachment({ uri: nextImageUri, base64: '', mimeType: 'image/jpeg' })
+      beginUpload(nextImageUri)
     }
     if (nextPrompt && !input.trim()) setInput(nextPrompt)
   }, [conversationId, imageUri, routePrompt])
-
-  const clearAttachment = useCallback(() => setAttachment(null), [])
 
   const pickAttachment = useCallback(async (source: ImageSource) => {
     if (!canSendImage) {
@@ -144,7 +237,6 @@ export default function AskScreen() {
         mediaTypes: 'images',
         allowsEditing: true,
         quality: 0.8,
-        base64: true,
       }
 
       const result =
@@ -155,23 +247,11 @@ export default function AskScreen() {
       if (result.canceled || !result.assets[0]) return
 
       const asset = result.assets[0]
-      if (!asset.base64) {
-        Alert.alert('Error', 'Failed to read image data.')
-        return
-      }
-
-      const uriLower = asset.uri.toLowerCase()
-      const mimeType: MimeType = uriLower.endsWith('.png')
-        ? 'image/png'
-        : uriLower.endsWith('.webp')
-          ? 'image/webp'
-          : 'image/jpeg'
-
-      setAttachment({ uri: asset.uri, base64: asset.base64, mimeType })
+      beginUpload(asset.uri, asset.width, asset.height)
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to pick image.')
     }
-  }, [canSendImage])
+  }, [canSendImage, beginUpload])
 
   const openLibrarySecondary = useCallback(() => {
     if (Platform.OS === 'ios') {
@@ -269,8 +349,16 @@ export default function AskScreen() {
           )
         }
 
+        // Attach signed URLs for any images in this conversation, keyed by message index.
+        const attachmentUrls = await signConversationAttachments(convId)
+        const withImages = attachmentUrls.size > 0
+          ? content.map((msg, index) =>
+              attachmentUrls.has(index) ? { ...msg, imageUri: attachmentUrls.get(index) } : msg
+            )
+          : content
+
         // Load messages
-        setMessages(content)
+        setMessages(withImages)
         setRecipeCards(loadedRecipeCards)
       }
       setConversationLoaded(true)
@@ -280,7 +368,7 @@ export default function AskScreen() {
   }
 
   const handleSubmit = useCallback(async () => {
-    if (isLoading || !hasContent) return
+    if (isLoading || !canSubmit) return
 
     if (!canSendMessage) {
       await RevenueCatUI.presentPaywall()
@@ -288,24 +376,30 @@ export default function AskScreen() {
     }
 
     const typedContext = input.trim()
-    const hasImage = !!attachment?.base64
-    const displayText = typedContext || 'Sent a photo'
+
+    // Snapshot the attachment, then clear the composer preview immediately —
+    // the chat bubble (pushed optimistically by sendMessage) becomes the single
+    // place the image is shown while we wait for the assistant.
+    const sentAttachment =
+      attachment?.status === 'done' && attachment.attachmentId
+        ? { attachmentId: attachment.attachmentId, imageUri: attachment.uri }
+        : null
 
     setInput('')
     setIsMultiline(false)
+    if (sentAttachment) clearAttachment()
+
     await incrementMessage()
-    if (hasImage) await incrementImage()
+    if (sentAttachment) await incrementImage()
 
     await sendMessage(
-      displayText,
+      typedContext,
       conversationId as string | undefined,
-      hasImage
-        ? { imageBase64: attachment!.base64, mimeType: attachment!.mimeType, context: typedContext }
+      sentAttachment
+        ? { ...sentAttachment, context: typedContext }
         : { context: typedContext }
     )
-
-    if (hasImage) clearAttachment()
-  }, [input, isLoading, hasContent, canSendMessage, sendMessage, conversationId, attachment, clearAttachment, incrementMessage, incrementImage])
+  }, [input, isLoading, canSubmit, canSendMessage, sendMessage, conversationId, attachment, clearAttachment, incrementMessage, incrementImage])
 
   const handleBack = useCallback(() => {
     if (isLoading) cancelRequest()
@@ -321,7 +415,7 @@ export default function AskScreen() {
       >
         {/* ── Chat area fills all available space ── */}
         <View className="flex-1">
-          {!isChatStarted && !hasContent ? (
+          {!isChatStarted && !attachment && input.trim().length === 0 ? (
             <View className="flex-1 items-center justify-center px-8">
               <Text className="text-2.5xl font-semibold text-black text-center tracking-tighter">
                 Turn leftovers into dinner
@@ -337,7 +431,7 @@ export default function AskScreen() {
 
         {/* ── Composer — always anchored above keyboard ── */}
         <View className="px-4 pb-4">
-          {/* Attachment preview — large embedded card */}
+          {/* Attachment preview — large embedded card with upload progress */}
           {attachment?.uri && (
             <View
               className="w-36 rounded-3xl overflow-hidden mb-3"
@@ -348,6 +442,59 @@ export default function AskScreen() {
                 className="w-full h-full"
                 resizeMode="cover"
               />
+
+              {/* Upload progress overlay */}
+              {attachment.status === 'uploading' && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.35)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <ActivityIndicator color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '600', marginTop: 6 }}>
+                    {Math.round(attachment.progress * 100)}%
+                  </Text>
+                  {/* Thin determinate bar along the bottom */}
+                  <View
+                    style={{
+                      position: 'absolute', bottom: 0, left: 0, right: 0, height: 4,
+                      backgroundColor: 'rgba(255,255,255,0.3)',
+                    }}
+                  >
+                    <View
+                      style={{
+                        height: 4,
+                        width: `${Math.round(attachment.progress * 100)}%`,
+                        backgroundColor: '#6CD401',
+                      }}
+                    />
+                  </View>
+                </View>
+              )}
+
+              {/* Error overlay — tap to retry */}
+              {attachment.status === 'error' && (
+                <Pressable
+                  onPress={() => beginUpload(attachment.uri, attachment.width, attachment.height)}
+                  style={{
+                    position: 'absolute',
+                    top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.45)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <SymbolView name="arrow.clockwise" size={22} tintColor="#FFFFFF" weight="semibold" />
+                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '600', marginTop: 4 }}>
+                    Tap to retry
+                  </Text>
+                </Pressable>
+              )}
+
               {/* Dismiss button — oversized, floating top-right */}
               <Pressable
                 onPress={clearAttachment}
@@ -418,18 +565,18 @@ export default function AskScreen() {
               {/* Submit button — always visible, muted or active */}
               <Pressable
                 onPress={handleSubmit}
-                disabled={isLoading}
+                disabled={isLoading || !canSubmit}
                 hitSlop={6}
                 style={{ marginLeft: 6, opacity: isLoading ? 0.4 : 1 }}
               >
                 <View
                   className="w-10 h-10 rounded-full items-center justify-center"
-                  style={{ backgroundColor: hasContent ? '#6CD401' : '#F7F7F7' }}
+                  style={{ backgroundColor: canSubmit ? '#6CD401' : '#F7F7F7' }}
                 >
                   <SymbolView
                     name="arrow.up"
                     size={18}
-                    tintColor={hasContent ? '#FFFFFF' : '#B2B2B2'}
+                    tintColor={canSubmit ? '#FFFFFF' : '#B2B2B2'}
                     weight="semibold"
                   />
                 </View>

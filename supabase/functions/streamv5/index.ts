@@ -104,6 +104,54 @@ async function execGetRecipeDetails(
   }
 }
 
+// ── Image attachments ─────────────────────────────────────────────────────────
+
+const ATTACHMENTS_BUCKET = "chat-attachments"
+
+// Base64-encode bytes without pulling in a dependency. Chunked so large images
+// don't blow the argument limit of String.fromCharCode / the call stack.
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ""
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
+// Fetch a chat image server-side (service role) from private Storage and encode
+// it as a data URL for the Responses API's native `input_image` part. Scoped to
+// the caller's conversation_id so a request can't reference another chat's image.
+// Returns null on any miss so vision degrades to text-only rather than failing.
+async function loadAttachmentDataUrl(
+  supabase: SupabaseClient,
+  attachmentId: string,
+  conversationId: string,
+): Promise<string | null> {
+  const { data: row, error } = await supabase
+    .from("attachments")
+    .select("storage_path, mime_type")
+    .eq("id", attachmentId)
+    .eq("conversation_id", conversationId)
+    .maybeSingle()
+  if (error || !row?.storage_path) {
+    if (error) console.error("[attachment] lookup failed:", error.message)
+    return null
+  }
+
+  const { data: blob, error: dlErr } = await supabase.storage
+    .from(ATTACHMENTS_BUCKET)
+    .download(row.storage_path as string)
+  if (dlErr || !blob) {
+    console.error("[attachment] download failed:", dlErr?.message ?? "no data")
+    return null
+  }
+
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const mime = (row.mime_type as string) || "image/jpeg"
+  return `data:${mime};base64,${bytesToBase64(bytes)}`
+}
+
 // ── OpenAI Responses API (streaming) ─────────────────────────────────────────
 
 type ResponsesOutput = Array<{
@@ -209,14 +257,14 @@ Deno.serve(async (req) => {
 
   // SupabaseSession is the only state mechanism. Reject previous_response_id at
   // the boundary so mixing the two is impossible by construction.
-  let reqBody: { message?: string; conversation_id?: string; previous_response_id?: unknown }
+  let reqBody: { message?: string; conversation_id?: string; attachment_id?: string; previous_response_id?: unknown }
   try { reqBody = await req.json() } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     })
   }
 
-  const { message, conversation_id, previous_response_id } = reqBody
+  const { message, conversation_id, attachment_id, previous_response_id } = reqBody
   if (previous_response_id !== undefined) {
     return new Response(
       JSON.stringify({ error: "previous_response_id is not accepted: this endpoint uses SupabaseSession for state" }),
@@ -246,7 +294,25 @@ Deno.serve(async (req) => {
       try {
         // Load prior turns from the DB; new items accumulate from priorItems.length onward.
         const priorItems = await session.getItems()
-        const userMsg    = { role: "user", content: message }
+
+        // Native multimodal: inline the image as an input_image part for THIS turn
+        // only. userMsgForStore (text-only) is what we persist, so later turns
+        // don't reload/resend the base64 — keeps context lean and cost bounded.
+        const userMsgForStore: Record<string, unknown> = { role: "user", content: message }
+        let userMsg: Record<string, unknown> = userMsgForStore
+        if (attachment_id) {
+          const dataUrl = await loadAttachmentDataUrl(supabase, attachment_id, conversationId)
+          if (dataUrl) {
+            userMsg = {
+              role: "user",
+              content: [
+                { type: "input_text", text: message },
+                { type: "input_image", image_url: dataUrl },
+              ],
+            }
+          }
+        }
+
         let input: unknown[] = [...priorItems, userMsg]
 
         for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -322,9 +388,11 @@ Deno.serve(async (req) => {
         }
 
         // Persist everything added this turn (user message + model output + tool I/O).
-        await session.addItems(
-          (input.slice(priorItems.length) as Record<string, unknown>[])
-        )
+        // Replace the inlined-image user message with the text-only copy so the
+        // base64 never lands in conversation_items.
+        const newItems = input.slice(priorItems.length) as Record<string, unknown>[]
+        if (newItems.length > 0) newItems[0] = userMsgForStore
+        await session.addItems(newItems)
 
         emit({ t: "message.completed" })
       } catch (err) {

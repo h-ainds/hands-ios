@@ -36,8 +36,12 @@ export interface ChatRequest {
   conversation_id?: string
   /** Recipe IDs currently visible to the user — tells the model what to vary. */
   visible_recipe_ids?: string[]
-  image_base64?: string
-  mime_type?: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
+  /**
+   * Reference to an image already uploaded to the private chat-attachments
+   * bucket. The bytes never travel in the payload; metadata lives in the
+   * public.attachments table, bound to this message.
+   */
+  attachment_id?: string
 }
 
 // ─── Tool I/O ──────────────────────────────────────────────────────────────────
