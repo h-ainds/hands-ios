@@ -62,7 +62,7 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
       if (fetchError) throw fetchError
       setFavoritesAvailable(true)
 
-      const rows = (data ?? []) as FavoriteRecipeRow[]
+      const rows = (data ?? []) as unknown as FavoriteRecipeRow[]
       const ids = new Set<number>()
       const recipeList: Recipe[] = []
 

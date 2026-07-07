@@ -127,15 +127,17 @@ export default function RecipeCard({
         .select('image')
         .eq('id', normalizedRecipeId)
         .maybeSingle()
-        .then(({ data, error }) => {
-          if (!cancelled.value) {
-            if (error) console.error('Error fetching recipe image:', error)
-            else if (data?.image) setImageUrl(data.image)
-          }
-        })
-        .catch((err) => {
-          if (!cancelled.value) console.error('Error fetching recipe image:', err)
-        })
+        .then(
+          ({ data, error }) => {
+            if (!cancelled.value) {
+              if (error) console.error('Error fetching recipe image:', error)
+              else if (data?.image) setImageUrl(data.image)
+            }
+          },
+          (err: unknown) => {
+            if (!cancelled.value) console.error('Error fetching recipe image:', err)
+          },
+        )
     }
 
     return () => { cancelled.value = true }
@@ -153,18 +155,20 @@ export default function RecipeCard({
       .select('image')
       .eq('id', normalizedRecipeId)
       .maybeSingle()
-      .then(({ data, error }) => {
-        if (!cancelled.value) {
-          if (error) console.error('Error fetching recipe image:', error)
-          else if (data?.image) {
-            setImageError(false)
-            setImageUrl(data.image)
+      .then(
+        ({ data, error }) => {
+          if (!cancelled.value) {
+            if (error) console.error('Error fetching recipe image:', error)
+            else if (data?.image) {
+              setImageError(false)
+              setImageUrl(data.image)
+            }
           }
-        }
-      })
-      .catch((err) => {
-        if (!cancelled.value) console.error('Error fetching recipe image:', err)
-      })
+        },
+        (err: unknown) => {
+          if (!cancelled.value) console.error('Error fetching recipe image:', err)
+        },
+      )
 
     return () => { cancelled.value = true }
   }, [imageError, dbFetched, hasValidRecipeId, normalizedRecipeId])
