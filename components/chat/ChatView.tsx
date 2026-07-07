@@ -61,7 +61,6 @@ function renderBlock(block: Block, i: number) {
             recipeId={recipe.id}
             title={recipe.title}
             image={recipe.image ?? undefined}
-            tags={recipe.tags}
             rounded="3xl"
             showActionButton
           />
