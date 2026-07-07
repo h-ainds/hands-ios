@@ -10,11 +10,15 @@ import type {
 // ─── Action ───────────────────────────────────────────────────────────────────
 
 /**
- * The reducer accepts every SSE ServerEvent directly as an action, plus a
- * synthetic user_turn action that the hook dispatches when the user sends a
- * message (before the SSE stream opens).
+ * The reducer accepts every SSE ServerEvent directly as an action, plus two
+ * synthetic actions the hook/screen dispatch outside the stream:
+ *   user_turn — a message the user just sent (before the SSE stream opens).
+ *   load      — replace all turns wholesale when hydrating a saved conversation.
  */
-export type ChatAction = ServerEvent | { t: "user_turn"; content: string }
+export type ChatAction =
+  | ServerEvent
+  | { t: "user_turn"; content: string; image_uri?: string }
+  | { t: "load"; turns: Turn[] }
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -65,9 +69,18 @@ function setBlocks(state: ChatState, blocks: Block[]): ChatState {
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.t) {
+    // ── Synthetic: hydrate turns from a saved conversation ───────────────────
+    case "load": {
+      return { ...initialChatState, turns: action.turns }
+    }
+
     // ── Synthetic: user sends a message ──────────────────────────────────────
     case "user_turn": {
-      const userTurn: Turn = { role: "user", content: action.content }
+      const userTurn: Turn = {
+        role: "user",
+        content: action.content,
+        image_uri: action.image_uri,
+      }
       return {
         ...state,
         turns: [...state.turns, userTurn],

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useReducer, useRef } from 'react'
 import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, Image, ActionSheetIOS, Alert, ActivityIndicator } from 'react-native'
 
 import * as ImagePicker from 'expo-image-picker'
@@ -17,6 +17,7 @@ import { useUsageTracking } from '@/hooks/useUsageTracking'
 import { supabase } from '@/lib/supabase/client'
 import { uploadChatAttachment, signConversationAttachments } from '@/lib/attachments'
 import BackButton from '@/components/BackButton'
+import { chatReducer, initialChatState } from '@/hooks/chatReducer'
 import type { Turn, Block } from '@/types/chat'
 
 type MimeType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
@@ -87,7 +88,10 @@ export default function AskScreen() {
   const [attachment, setAttachment] = useState<Attachment | null>(null)
   const uploadAbortRef = useRef<AbortController | null>(null)
 
-  const { messages, recipeCards, status, isLoading, sendMessage, cancelRequest, setMessages, setRecipeCards } = useRecipeChat({
+  const [chatState, dispatch] = useReducer(chatReducer, initialChatState)
+
+  const { status, isLoading, sendMessage, cancelRequest } = useRecipeChat({
+    dispatch,
     timeout: 30000,
   })
 
@@ -95,39 +99,9 @@ export default function AskScreen() {
 
   const [isMultiline, setIsMultiline] = useState(false)
 
-  const isChatStarted = messages.length > 0
+  const turns = chatState.turns
+  const isChatStarted = turns.length > 0
   const isTyping = status === 'connecting' || status === 'streaming' || status === 'typing'
-
-  // Adapt legacy messages/recipeCards → Turn[] for ChatView.
-  // Assistant turns get a ready RecipeCardsBlock when recipeCards has an entry for that index.
-  const turns = useMemo<Turn[]>(() =>
-    messages.map((msg, i) => {
-      if (msg.role === 'user') {
-        return { role: 'user' as const, content: msg.content, image_uri: msg.imageUri }
-      }
-      const blocks: Block[] = []
-      if (msg.content) {
-        blocks.push({ kind: 'text' as const, content: msg.content, final: true })
-      }
-      const cardData = recipeCards.find((c: any) => c.messageIndex === i)
-      if (cardData?.recipes?.items?.length) {
-        blocks.push({
-          kind: 'recipe_cards' as const,
-          status: 'ready' as const,
-          tool_use_id: `legacy-${i}`,
-          items: cardData.recipes.items.map((item: any) => ({
-            id: String(item.id ?? i),
-            title: String(item.title ?? ''),
-            image: item.image ?? null,
-            caption: item.caption ?? null,
-            tags: null,
-          })),
-        })
-      }
-      return { role: 'assistant' as const, blocks, done: true }
-    }),
-    [messages, recipeCards]
-  )
 
   const isUploading = attachment?.status === 'uploading'
   const attachmentReady = attachment?.status === 'done' && !!attachment.attachmentId
@@ -326,7 +300,7 @@ export default function AskScreen() {
           }
         }
 
-        const loadedRecipeCards: any[] = []
+        const validItemsByIndex = new Map<number, PersistedRecipe[]>()
         let filteredInvalidCount = 0
 
         content.forEach((msg, index) => {
@@ -343,15 +317,7 @@ export default function AskScreen() {
             return Boolean(recipe?.title)
           })
 
-          if (validItems.length > 0) {
-            loadedRecipeCards.push({
-              messageIndex: index,
-              recipes: {
-                text: msg.content,
-                items: validItems
-              }
-            })
-          }
+          if (validItems.length > 0) validItemsByIndex.set(index, validItems)
         })
 
         if (filteredInvalidCount > 0) {
@@ -360,17 +326,39 @@ export default function AskScreen() {
           )
         }
 
-        // Attach signed URLs for any images in this conversation, keyed by message index.
+        // Signed URLs for any images in this conversation, keyed by message index.
         const attachmentUrls = await signConversationAttachments(convId)
-        const withImages = attachmentUrls.size > 0
-          ? content.map((msg, index) =>
-              attachmentUrls.has(index) ? { ...msg, imageUri: attachmentUrls.get(index) } : msg
-            )
-          : content
 
-        // Load messages
-        setMessages(withImages)
-        setRecipeCards(loadedRecipeCards)
+        // Rebuild the reducer's Turn[] straight from history — same block shape
+        // the live stream produces, so ChatView renders reloaded chats identically.
+        const turnsFromHistory: Turn[] = content.map((msg, index) => {
+          const imageUri = attachmentUrls.get(index)
+          if (msg.role === 'user') {
+            return { role: 'user', content: msg.content, image_uri: imageUri }
+          }
+          const blocks: Block[] = []
+          if (msg.content) {
+            blocks.push({ kind: 'text', content: msg.content, final: true })
+          }
+          const items = validItemsByIndex.get(index)
+          if (items && items.length > 0) {
+            blocks.push({
+              kind: 'recipe_cards',
+              status: 'ready',
+              tool_use_id: `history-${index}`,
+              items: items.map((recipe) => ({
+                id: String(recipe.id ?? index),
+                title: String(recipe.title ?? ''),
+                image: recipe.image ?? null,
+                caption: recipe.caption ?? null,
+                tags: null,
+              })),
+            })
+          }
+          return { role: 'assistant', blocks, done: true }
+        })
+
+        dispatch({ t: 'load', turns: turnsFromHistory })
       }
       setConversationLoaded(true)
     } catch (error) {

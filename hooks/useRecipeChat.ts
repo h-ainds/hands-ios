@@ -1,23 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { finalizeAttachment } from "@/lib/attachments";
-
-export type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-  /** Set on user turns that carried an image, so the bubble keeps showing it. */
-  attachmentId?: string;
-  /** Local uri (optimistic) or signed URL (history) for rendering the image. */
-  imageUri?: string;
-};
-
-export type RecipeCardData = {
-  messageIndex: number;
-  recipes: {
-    text?: string;
-    items: { id: string; title: string; caption: string; image: string }[];
-  };
-};
+import type { ServerEvent } from "@/types/chat";
+import type { ChatAction } from "@/hooks/chatReducer";
 
 export type StreamingStatus =
   | "idle"
@@ -38,13 +23,17 @@ const DEFAULT_IMAGE_CONTEXT = "What can I make with these ingredients?";
 const DEFAULT_TIMEOUT = 30000;
 
 interface UseRecipeChatOptions {
+  /**
+   * Reducer dispatch owned by the screen. The hook pushes the synthetic
+   * user_turn action plus every parsed SSE ServerEvent straight through it —
+   * the reducer is the single source of truth for the rendered turns.
+   */
+  dispatch: React.Dispatch<ChatAction>;
   timeout?: number;
   onError?: (error: Error) => void;
 }
 
 interface UseRecipeChatReturn {
-  messages: ChatMessage[];
-  recipeCards: RecipeCardData[];
   status: StreamingStatus;
   error: Error | null;
   isLoading: boolean;
@@ -53,19 +42,14 @@ interface UseRecipeChatReturn {
     conversationId?: string,
     payload?: ChatSendAttachment,
   ) => Promise<void>;
-  clearChat: () => void;
   cancelRequest: () => void;
-  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
-  setRecipeCards: React.Dispatch<React.SetStateAction<RecipeCardData[]>>;
 }
 
 export function useRecipeChat(
-  options: UseRecipeChatOptions = {},
+  options: UseRecipeChatOptions,
 ): UseRecipeChatReturn {
-  const { timeout = DEFAULT_TIMEOUT, onError } = options;
+  const { dispatch, timeout = DEFAULT_TIMEOUT, onError } = options;
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [recipeCards, setRecipeCards] = useState<RecipeCardData[]>([]);
   const [status, setStatus] = useState<StreamingStatus>("idle");
   const [error, setError] = useState<Error | null>(null);
   const [currentConversationId, setCurrentConversationId] = useState<
@@ -74,8 +58,6 @@ export function useRecipeChat(
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
-  // Tracks Responses API context: [user1, ...output1, user2, ...output2, ...]
-  const conversationContextRef = useRef<unknown[]>([]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -137,19 +119,13 @@ export function useRecipeChat(
       const attachmentId = payload?.attachmentId;
       let activeConversationId = conversationId || currentConversationId;
 
-      // Snapshot context before this turn so we can extend it after response
-      const contextSnapshot = [...conversationContextRef.current];
-
       if (isMountedRef.current) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "user" as const,
-            content: userMessage,
-            attachmentId,
-            imageUri: payload?.imageUri,
-          },
-        ]);
+        // Optimistic user turn — the reducer owns it, image included.
+        dispatch({
+          t: "user_turn",
+          content: userMessage,
+          image_uri: payload?.imageUri,
+        });
         setStatus("connecting");
         setError(null);
       }
@@ -209,13 +185,11 @@ export function useRecipeChat(
           );
           setError(timeoutError);
           setStatus("error");
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant" as const,
-              content: "Sorry, the request timed out. Please try again.",
-            },
-          ]);
+          dispatch({
+            t: "text.delta",
+            delta: "Sorry, the request timed out. Please try again.",
+          });
+          dispatch({ t: "done" });
           onError?.(timeoutError);
         }
       }, timeout);
@@ -265,47 +239,23 @@ export function useRecipeChat(
 
         if (isMountedRef.current) setStatus("streaming");
 
-        // Add empty assistant message to be filled by stream
-        if (isMountedRef.current) {
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant" as const, content: "" },
-          ]);
-        }
-
+        // Assistant text is accumulated here purely so we can persist the final
+        // turn; the rendered turn is built entirely by the reducer.
         let accumulatedText = "";
-        // Recipe cards collected during the stream; flushed to state after done.
-        const streamedCards: RecipeCardData["recipes"]["items"][] = [];
 
         const processLine = (data: string) => {
           if (!data || data === "[DONE]") return;
-          let event: Record<string, unknown>;
-          try { event = JSON.parse(data) as Record<string, unknown>; } catch { return; }
-
-          // streamv5 ServerEvent format — discriminant field is `t`
-          if (event.t === "text.delta") {
-            accumulatedText += (event.delta as string) ?? "";
-            if (isMountedRef.current) {
-              const text = accumulatedText;
-              setMessages((prev) =>
-                prev.map((msg, idx) =>
-                  idx === prev.length - 1 ? { ...msg, content: text } : msg,
-                ),
-              );
-            }
-          } else if (event.t === "recipe.cards") {
-            const items = (event.items as any[]) ?? [];
-            if (items.length > 0) {
-              streamedCards.push(
-                items.map((item: any) => ({
-                  id: String(item.id ?? ""),
-                  title: String(item.title ?? ""),
-                  caption: item.caption ?? "",
-                  image: item.image ?? "",
-                })),
-              );
-            }
+          let event: ServerEvent;
+          try {
+            event = JSON.parse(data) as ServerEvent;
+          } catch {
+            return;
           }
+          if (event.t === "text.delta") accumulatedText += event.delta ?? "";
+          // Every parsed SSE event goes straight into the reducer — this is what
+          // fixes multi-tool ordering: tool.call.started creates a skeleton block
+          // at its true position and recipe.cards hydrates it by tool_use_id.
+          if (isMountedRef.current) dispatch(event);
         };
 
         if (response.body) {
@@ -329,39 +279,10 @@ export function useRecipeChat(
           for (const line of raw.split("\n")) {
             if (line.startsWith("data: ")) processLine(line.slice(6).trim());
           }
-          if (isMountedRef.current) {
-            setMessages((prev) =>
-              prev.map((msg, idx) =>
-                idx === prev.length - 1 ? { ...msg, content: accumulatedText } : msg,
-              ),
-            );
-          }
         }
 
         clearTimeout(timeoutId);
         if (!isMountedRef.current) return;
-
-        // Flush collected recipe cards — messageIndex is the assistant message (last in state)
-        if (streamedCards.length > 0) {
-          setMessages((prev) => {
-            const assistantIdx = prev.length - 1;
-            setRecipeCards((prevCards) => [
-              ...prevCards,
-              ...streamedCards.map((items) => ({
-                messageIndex: assistantIdx,
-                recipes: { items },
-              })),
-            ]);
-            return prev;
-          });
-        }
-
-        // Context management: streamv5 uses SupabaseSession (conversation_id) for
-        // multi-turn state, so conversationContextRef is no longer the primary mechanism.
-        conversationContextRef.current = [
-          ...contextSnapshot,
-          { role: "user", content: promptForModel },
-        ];
 
         if (activeConversationId) {
           await saveMessageToConversation(
@@ -388,33 +309,19 @@ export function useRecipeChat(
         if (isMountedRef.current) {
           setError(errorObj);
           setStatus("error");
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant" as const,
-              content: "Sorry, I encountered an error. Please try again.",
-            },
-          ]);
+          dispatch({
+            t: "text.delta",
+            delta: "Sorry, I encountered an error. Please try again.",
+          });
+          dispatch({ t: "done" });
         }
         onError?.(errorObj);
       } finally {
         clearTimeout(timeoutId);
       }
     },
-    [timeout, onError, currentConversationId, saveMessageToConversation],
+    [timeout, onError, currentConversationId, saveMessageToConversation, dispatch],
   );
-
-  const clearChat = useCallback(() => {
-    abortControllerRef.current?.abort();
-    if (isMountedRef.current) {
-      setMessages([]);
-      setRecipeCards([]);
-      setStatus("idle");
-      setError(null);
-      setCurrentConversationId(null);
-      conversationContextRef.current = [];
-    }
-  }, []);
 
   const cancelRequest = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -422,16 +329,11 @@ export function useRecipeChat(
   }, []);
 
   return {
-    messages,
-    recipeCards,
     status,
     error,
     isLoading:
       status === "connecting" || status === "streaming" || status === "typing",
     sendMessage,
-    clearChat,
     cancelRequest,
-    setMessages,
-    setRecipeCards,
   };
 }
