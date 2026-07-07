@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { finalizeAttachment } from "@/lib/attachments";
-import type { ServerEvent } from "@/types/chat";
+import type { RecipeCard, ServerEvent } from "@/types/chat";
+import { chatReducer, initialChatState } from "@/hooks/chatReducer";
 import type { ChatAction } from "@/hooks/chatReducer";
 
 export type StreamingStatus =
@@ -73,6 +74,7 @@ export function useRecipeChat(
       role: "user" | "assistant",
       content: string,
       attachmentId?: string,
+      recipes?: RecipeCard[],
     ): Promise<number | null> => {
       try {
         const { data: conv } = await supabase
@@ -85,6 +87,7 @@ export function useRecipeChat(
         const messageIndex = currentContent.length;
         const message: Record<string, unknown> = { role, content };
         if (attachmentId) message.attachment_id = attachmentId;
+        if (recipes && recipes.length > 0) message.recipes = recipes;
         const newContent = [...currentContent, message];
 
         await supabase
@@ -243,6 +246,14 @@ export function useRecipeChat(
         // turn; the rendered turn is built entirely by the reducer.
         let accumulatedText = "";
 
+        // Shadow of the screen's reduced state, fed the identical actions, so
+        // the persisted turn (text + recipe cards) is derived from the same
+        // final reduced state the user sees — not from raw stream events.
+        let shadowState = chatReducer(initialChatState, {
+          t: "user_turn",
+          content: userMessage,
+        });
+
         const processLine = (data: string) => {
           if (!data || data === "[DONE]") return;
           let event: ServerEvent;
@@ -252,6 +263,7 @@ export function useRecipeChat(
             return;
           }
           if (event.t === "text.delta") accumulatedText += event.delta ?? "";
+          shadowState = chatReducer(shadowState, event);
           // Every parsed SSE event goes straight into the reducer — this is what
           // fixes multi-tool ordering: tool.call.started creates a skeleton block
           // at its true position and recipe.cards hydrates it by tool_use_id.
@@ -285,10 +297,25 @@ export function useRecipeChat(
         if (!isMountedRef.current) return;
 
         if (activeConversationId) {
+          // Cards that survived the full reduction (hydrated, not failed) are
+          // exactly what's on screen — persist them with the assistant turn so
+          // loadConversation can rebuild the cards on reopen.
+          const finalTurn = shadowState.turns[shadowState.turns.length - 1];
+          const recipeCards: RecipeCard[] =
+            finalTurn?.role === "assistant"
+              ? finalTurn.blocks.flatMap((block) =>
+                  block.kind === "recipe_cards" && block.status === "ready"
+                    ? block.items
+                    : [],
+                )
+              : [];
+
           await saveMessageToConversation(
             activeConversationId,
             "assistant",
             accumulatedText,
+            undefined,
+            recipeCards,
           );
         }
 
