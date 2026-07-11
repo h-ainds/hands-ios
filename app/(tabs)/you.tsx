@@ -140,7 +140,7 @@ export default function ProfileScreen() {
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} className="w-[118px] h-[118px] rounded-full" />
             ) : (
-              <SymbolView name="person.fill" size={48} tintColor="#9F9F9F" />
+              <SymbolView name="person.fill" size={48} weight="semibold" tintColor="#9F9F9F" />
             )}
           </View>
           <Text className="text-2.5xl font-bold text-black">{firstName}</Text>
@@ -153,18 +153,18 @@ export default function ProfileScreen() {
             onPress={() => Purchases.showManageSubscriptions()}
             className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
           >
-            <SymbolView name="star.fill" size={20} tintColor="#6CD401" />
+            <SymbolView name="star.fill" size={20} weight="semibold" tintColor="#6CD401" />
             <Text className="text-black ml-3 text-xl font-bold flex-1">Hands Plus</Text>
-            <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
+            <SymbolView name="chevron.right" size={16} weight="semibold" tintColor="#9F9F9F" />
           </Pressable>
         ) : (
           <Pressable
             onPress={() => RevenueCatUI.presentPaywall()}
             className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
           >
-            <SymbolView name="star" size={20} tintColor="#6CD401" />
+            <SymbolView name="star" size={20} weight="semibold" tintColor="#6CD401" />
             <Text className="text-black ml-3 text-xl font-bold flex-1">Upgrade</Text>
-            <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
+            <SymbolView name="chevron.right" size={16} weight="semibold" tintColor="#9F9F9F" />
           </Pressable>
         )}
 
@@ -173,18 +173,18 @@ export default function ProfileScreen() {
           onPress={() => router.push('/memory')}
           className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
         >
-          <SymbolView name="brain.head.profile" size={20} tintColor="#000" />
+          <SymbolView name="brain.head.profile" size={20} weight="semibold" tintColor="#000" />
           <Text className="text-black ml-3 text-xl font-bold flex-1">Memory</Text>
-          <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
+          <SymbolView name="chevron.right" size={16} weight="semibold" tintColor="#9F9F9F" />
         </Pressable>
 
         <Pressable
           onPress={() => router.push('/favorites')}
           className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
         >
-          <SymbolView name="heart" size={20} tintColor="#000" />
+          <SymbolView name="heart" size={20} weight="semibold" tintColor="#000" />
           <Text className="text-black ml-3 text-xl font-bold flex-1">Favorites</Text>
-          <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
+          <SymbolView name="chevron.right" size={16} weight="semibold" tintColor="#9F9F9F" />
         </Pressable>
 
         {/* Logout Button */}
@@ -192,9 +192,9 @@ export default function ProfileScreen() {
           onPress={handleLogout}
           className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
         >
-          <SymbolView name="rectangle.portrait.and.arrow.right" size={20} tintColor="#000" />
+          <SymbolView name="rectangle.portrait.and.arrow.right" size={20} weight="semibold" tintColor="#000" />
           <Text className="text-black ml-3 text-xl font-bold flex-1">Logout</Text>
-          <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
+          <SymbolView name="chevron.right" size={16} weight="semibold" tintColor="#9F9F9F" />
         </Pressable>
 
         {/* Delete Account Button */}
@@ -202,9 +202,9 @@ export default function ProfileScreen() {
           onPress={handleDeleteAccount}
           className="bg-white rounded-xl p-4 flex-row items-center active:opacity-70"
         >
-          <SymbolView name="trash.fill" size={20} tintColor="#ef4444" />
+          <SymbolView name="trash.fill" size={20} weight="semibold" tintColor="#ef4444" />
           <Text className="text-red-600 ml-3 text-xl font-bold flex-1">Delete Account</Text>
-          <SymbolView name="chevron.right" size={16} tintColor="#9F9F9F" />
+          <SymbolView name="chevron.right" size={16} weight="semibold" tintColor="#9F9F9F" />
         </Pressable>
       </View>
     </SafeAreaView>

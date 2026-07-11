@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Pressable, Modal, View, Text, Alert, StyleSheet, StyleProp, ViewStyle } from 'react-native'
+import React, { useState, useRef, useEffect } from 'react'
+import { Pressable, Modal, View, Text, Alert, StyleSheet, StyleProp, ViewStyle, Animated } from 'react-native'
 import { SymbolView } from 'expo-symbols'
 import { useFavorites } from '@/hooks/useFavorites'
 
@@ -16,14 +16,32 @@ export default function PlusButton({ recipeId, variant = 'card', style }: PlusBu
   const favorited = isValid ? isFavorite(numericId) : false
   const loading = isValid && pendingRecipeIds.has(numericId)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [sheetHeight, setSheetHeight] = useState(0)
+  const anim = useRef(new Animated.Value(0)).current
 
   const iconSize = variant === 'detail' ? 20 : 17
+
+  useEffect(() => {
+    if (isSheetOpen) {
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start()
+    }
+  }, [isSheetOpen, anim])
 
   const openSheet = () => {
     if (loading) return
     setIsSheetOpen(true)
   }
-  const closeSheet = () => setIsSheetOpen(false)
+  const closeSheet = () => {
+    Animated.timing(anim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => setIsSheetOpen(false))
+  }
 
   const handleToggle = async () => {
     if (!isValid) return
@@ -62,19 +80,33 @@ export default function PlusButton({ recipeId, variant = 'card', style }: PlusBu
       </Pressable>
       <Modal visible={isSheetOpen} transparent animationType="none" onRequestClose={closeSheet}>
         <View className="flex-1 justify-end">
-          <View className="absolute inset-0 bg-black/30" />
+          <Animated.View
+            style={{ opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.3] }) }}
+            className="absolute inset-0 bg-black"
+          />
           <Pressable className="absolute inset-0" onPress={closeSheet} />
-          <View className="bg-white rounded-t-3xl px-4 pt-0 pb-8">
-            <View className="w-14 h-1.5 bg-gray-300 rounded-full self-center mb-4" />
-            <Pressable className="py-4 px-2" onPress={handleToggle}>
-              <Text className="text-lg font-semibold text-black">
+          <Animated.View
+            onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
+            style={{
+              transform: [
+                {
+                  translateY: anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [sheetHeight || 400, 0],
+                  }),
+                },
+              ],
+            }}
+            className="bg-white rounded-t-[32px] px-4 pt-4 pb-8"
+          >
+            <View className="w-14 h-0.5 bg-secondary-active rounded-full self-center mb-4" />
+            <Pressable className="py-8 px-4 flex-row items-center" onPress={handleToggle}>
+              <SymbolView name={favorited ? 'heart.slash' : 'heart'} size={20} weight="semibold" tintColor="#000" />
+              <Text className="text-lg font-semibold text-black ml-3">
                 {favorited ? 'Remove from Favorites' : 'Add to Favorites'}
               </Text>
             </Pressable>
-            <Pressable className="py-4 px-2 border-t border-gray-100" onPress={closeSheet}>
-              <Text className="text-lg font-semibold text-black">Reply</Text>
-            </Pressable>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
     </>
