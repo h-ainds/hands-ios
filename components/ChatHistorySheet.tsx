@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { View, Text, Pressable, FlatList, Modal, StyleSheet } from 'react-native'
+import { useState, useEffect, useRef } from 'react'
+import { View, Text, Pressable, FlatList, Modal, StyleSheet, Animated } from 'react-native'
 import { SymbolView } from 'expo-symbols'
 import { supabase } from '@/lib/supabase/client'
 import { useRouter } from 'expo-router'
@@ -24,6 +24,8 @@ export default function ChatHistorySheet({
 }: ChatHistorySheetProps) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
+  const [sheetHeight, setSheetHeight] = useState(0)
+  const anim = useRef(new Animated.Value(0)).current
   const router = useRouter()
 
   useEffect(() => {
@@ -31,6 +33,24 @@ export default function ChatHistorySheet({
       loadConversations()
     }
   }, [isOpen, userId])
+
+  useEffect(() => {
+    if (isOpen) {
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start()
+    }
+  }, [isOpen, anim])
+
+  const animateOut = (done: () => void) => {
+    Animated.timing(anim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(done)
+  }
 
   const loadConversations = async () => {
     if (!userId) return
@@ -65,31 +85,61 @@ export default function ChatHistorySheet({
     return date.toLocaleDateString()
   }
 
+  const handleClose = () => {
+    animateOut(onClose)
+  }
+
   const handleSelectConversation = (id: string) => {
-    onClose()
-    router.push(`/ask?conversationId=${id}`)
+    animateOut(() => {
+      onClose()
+      router.push(`/ask?conversationId=${id}`)
+    })
   }
 
   const handleNewChat = () => {
-    onClose()
-    router.push('/ask')
+    animateOut(() => {
+      onClose()
+      router.push('/ask')
+    })
   }
 
   return (
     <Modal
       visible={isOpen}
-      animationType="slide"
+      animationType="none"
       transparent
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.backdrop}>
-        <Pressable style={styles.backdropPress} onPress={onClose} />
-        
-        <View style={styles.sheet}>
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            styles.backdropFill,
+            { opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.5] }) },
+          ]}
+        />
+        <Pressable style={styles.backdropPress} onPress={handleClose} />
+
+        <Animated.View
+          onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
+          style={[
+            styles.sheet,
+            {
+              transform: [
+                {
+                  translateY: anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [sheetHeight || 600, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Chat History</Text>
-            <Pressable onPress={onClose} style={styles.closeButton}>
+            <Pressable onPress={handleClose} style={styles.closeButton}>
               <SymbolView name="xmark" size={24} tintColor="#000000" />
             </Pressable>
           </View>
@@ -130,7 +180,7 @@ export default function ChatHistorySheet({
               )}
             />
           )}
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   )
@@ -139,15 +189,17 @@ export default function ChatHistorySheet({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  backdropFill: {
+    backgroundColor: '#000',
   },
   backdropPress: {
     flex: 1,
   },
   sheet: {
     backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     height: '70%',
     padding: 16,
   },
