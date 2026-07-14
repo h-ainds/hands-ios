@@ -267,7 +267,7 @@ export default function HomeScreen() {
                     title={recipe.title}
                     image={recipe.image ?? undefined}
                     cardType="vertical"
-                    rounded="2xl"
+                    rounded="3xl"
                     showActionButton
                     onPress={() => router.push(`/recipe/${recipe.id}`)}
                   />
@@ -304,7 +304,7 @@ export default function HomeScreen() {
                     title={recipe.title}
                     image={recipe.image ?? undefined}
                     cardType="vertical"
-                    rounded="2xl"
+                    rounded="3xl"
                     showActionButton
                     onPress={() => router.push(`/recipe/${recipe.id}`)}
                   />

@@ -125,6 +125,7 @@ export default function SearchScreen() {
                 title={item.title}
                 image={item.image || undefined}
                 cardType="square"
+                rounded="3xl"
                 showActionButton
                 onPress={() => router.push(`/recipe/${item.id}` as any)}
               />
