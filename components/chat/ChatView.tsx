@@ -4,6 +4,7 @@ import Markdown from 'react-native-markdown-display'
 import type { AssistantTurn, Block, Turn } from '@/types/chat'
 import RecipeCard from '@/components/RecipeCard'
 import RecipeCardSkeleton from './RecipeCardSkeleton'
+import MessageActions, { MESSAGE_ACTIONS_EDGE_INSET } from './MessageActions'
 
 // ─── Markdown styles (unchanged) ──────────────────────────────────────────────
 
@@ -31,6 +32,9 @@ const markdownStyles = {
 // ─── Block renderer ────────────────────────────────────────────────────────────
 
 const SKELETON_COUNT = 3
+
+/** Horizontal gutter every message block sits on (matches the px-4 on text blocks). */
+const GUTTER = 24
 
 function renderBlock(block: Block, i: number) {
   if (block.kind === 'text') {
@@ -77,14 +81,70 @@ function AssistantBubble({ turn }: { turn: AssistantTurn }) {
   return <>{turn.blocks.map((block, i) => renderBlock(block, i))}</>
 }
 
+/**
+ * Flattens an assistant turn into the plain text a user would expect on the
+ * clipboard or in a share sheet: prose as written, card blocks as a titles
+ * list. Rendering concern only — the screen decides what to do with it.
+ */
+function assistantPlainText(turn: AssistantTurn): string {
+  return turn.blocks
+    .map((block) => {
+      if (block.kind === 'text') return block.content.trim()
+      if (block.status === 'ready') return block.items.map((r) => `• ${r.title}`).join('\n')
+      return ''
+    })
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/** Action row for one assistant turn; renders nothing if there is no content to act on. */
+function AssistantActions({
+  turn,
+  onCopy,
+  onShare,
+  onRetry,
+}: {
+  turn: AssistantTurn
+  onCopy?: (text: string) => void
+  onShare?: (text: string) => void
+  onRetry?: () => void
+}) {
+  const text = assistantPlainText(turn)
+  if (!text) return null
+
+  return (
+    <MessageActions
+      // Back off the button's own inset so the first glyph's left edge — not
+      // the edge of its larger hit box — lands on the text gutter.
+      style={{ paddingLeft: GUTTER - MESSAGE_ACTIONS_EDGE_INSET, paddingTop: 2 }}
+      onCopy={onCopy && (() => onCopy(text))}
+      onShare={onShare && (() => onShare(text))}
+      onRetry={onRetry}
+    />
+  )
+}
+
 // ─── ChatView ─────────────────────────────────────────────────────────────────
 
 interface ChatViewProps {
   turns: Turn[]
   isTyping?: boolean
+  /**
+   * Actions for the latest answer. ChatView supplies the flattened text; what
+   * copy/share/retry actually do is entirely the screen's business.
+   */
+  onCopyMessage?: (text: string) => void
+  onShareMessage?: (text: string) => void
+  onRetryMessage?: () => void
 }
 
-export default function ChatView({ turns, isTyping }: ChatViewProps) {
+export default function ChatView({
+  turns,
+  isTyping,
+  onCopyMessage,
+  onShareMessage,
+  onRetryMessage,
+}: ChatViewProps) {
   const scrollRef = useRef<ScrollView>(null)
 
   useEffect(() => {
@@ -117,7 +177,19 @@ export default function ChatView({ turns, isTyping }: ChatViewProps) {
               )}
             </View>
           ) : (
-            <AssistantBubble turn={turn} />
+            <>
+              <AssistantBubble turn={turn} />
+              {/* Actions sit under the latest settled answer only — retry on an
+                  older turn would mean rewriting history behind it. */}
+              {i === turns.length - 1 && turn.done && !isTyping && (
+                <AssistantActions
+                  turn={turn}
+                  onCopy={onCopyMessage}
+                  onShare={onShareMessage}
+                  onRetry={onRetryMessage}
+                />
+              )}
+            </>
           )}
         </View>
       ))}

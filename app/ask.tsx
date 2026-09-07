@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useReducer, useRef } from 'react'
-import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, Image, ActionSheetIOS, Alert, ActivityIndicator } from 'react-native'
+import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, Image, ActionSheetIOS, Alert, ActivityIndicator, Clipboard, Share } from 'react-native'
 
 import * as ImagePicker from 'expo-image-picker'
 // TEMP: expo-image-manipulator (native module) disabled so the existing dev
@@ -13,6 +13,7 @@ import { SymbolView } from 'expo-symbols'
 import RevenueCatUI from 'react-native-purchases-ui'
 import ChatView from '@/components/chat/ChatView'
 import { useRecipeChat } from '@/hooks/useRecipeChat'
+import type { ChatSendAttachment } from '@/hooks/useRecipeChat'
 import { useUsageTracking } from '@/hooks/useUsageTracking'
 import { supabase } from '@/lib/supabase/client'
 import { uploadChatAttachment, signConversationAttachments } from '@/lib/attachments'
@@ -87,6 +88,13 @@ export default function AskScreen() {
   const [conversationLoaded, setConversationLoaded] = useState(false)
   const [attachment, setAttachment] = useState<Attachment | null>(null)
   const uploadAbortRef = useRef<AbortController | null>(null)
+  /**
+   * Exactly what was handed to sendMessage last, so Retry replays the real
+   * prompt (attachment included) rather than a guess reconstructed from the
+   * rendered bubble. Null in a conversation reopened from history — the text
+   * of the last user turn is the fallback there.
+   */
+  const lastSendRef = useRef<{ message: string; payload: ChatSendAttachment } | null>(null)
 
   const [chatState, dispatch] = useReducer(chatReducer, initialChatState)
 
@@ -391,14 +399,54 @@ export default function AskScreen() {
     await incrementMessage()
     if (sentAttachment) await incrementImage()
 
-    await sendMessage(
-      typedContext,
-      conversationId as string | undefined,
-      sentAttachment
-        ? { ...sentAttachment, context: typedContext }
-        : { context: typedContext }
-    )
+    const payload: ChatSendAttachment = sentAttachment
+      ? { ...sentAttachment, context: typedContext }
+      : { context: typedContext }
+    lastSendRef.current = { message: typedContext, payload }
+
+    await sendMessage(typedContext, conversationId as string | undefined, payload)
   }, [input, isLoading, canSubmit, canSendMessage, sendMessage, conversationId, attachment, clearAttachment, incrementMessage, incrementImage])
+
+  // ── Message actions ─────────────────────────────────────────────────────────
+  // ChatView hands these the flattened text of the answer; the wiring to the
+  // chat pipeline lives here, so MessageActions stays purely presentational.
+
+  const handleCopyMessage = useCallback((text: string) => {
+    if (!text) return
+    // RN core Clipboard — deprecated but still shipped, and unlike
+    // expo-clipboard it needs no native rebuild of the dev client.
+    Clipboard.setString(text)
+  }, [])
+
+  const handleShareMessage = useCallback(async (text: string) => {
+    if (!text) return
+    try {
+      await Share.share({ message: text })
+    } catch (e: any) {
+      Alert.alert('Share failed', e?.message || 'Could not open the share sheet.')
+    }
+  }, [])
+
+  const handleRetryMessage = useCallback(async () => {
+    if (isLoading) return
+
+    const lastUserTurn = [...turns].reverse().find((t): t is Extract<Turn, { role: 'user' }> => t.role === 'user')
+    const last = lastSendRef.current
+    const message = last?.message ?? lastUserTurn?.content ?? ''
+    const payload: ChatSendAttachment = last?.payload ?? { context: message }
+    if (!message.trim() && !payload.attachmentId) return
+
+    if (!canSendMessage) {
+      await RevenueCatUI.presentPaywall()
+      return
+    }
+
+    // Drop the answer on screen first, then stream its replacement into the
+    // same slot; the user turn above it is left untouched.
+    dispatch({ t: 'retry' })
+    await incrementMessage()
+    await sendMessage(message, conversationId as string | undefined, payload, { regenerate: true })
+  }, [isLoading, turns, canSendMessage, sendMessage, conversationId, incrementMessage])
 
   const handleBack = useCallback(() => {
     if (isLoading) cancelRequest()
@@ -424,7 +472,13 @@ export default function AskScreen() {
               </Text>
             </View>
           ) : (
-            <ChatView turns={turns} isTyping={isTyping} />
+            <ChatView
+              turns={turns}
+              isTyping={isTyping}
+              onCopyMessage={handleCopyMessage}
+              onShareMessage={handleShareMessage}
+              onRetryMessage={handleRetryMessage}
+            />
           )}
         </View>
 

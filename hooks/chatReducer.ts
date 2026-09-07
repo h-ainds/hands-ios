@@ -10,15 +10,18 @@ import type {
 // ─── Action ───────────────────────────────────────────────────────────────────
 
 /**
- * The reducer accepts every SSE ServerEvent directly as an action, plus two
+ * The reducer accepts every SSE ServerEvent directly as an action, plus three
  * synthetic actions the hook/screen dispatch outside the stream:
  *   user_turn — a message the user just sent (before the SSE stream opens).
  *   load      — replace all turns wholesale when hydrating a saved conversation.
+ *   retry     — discard the trailing assistant turn so a regenerated one can
+ *               stream into its place; the user turn before it stays put.
  */
 export type ChatAction =
   | ServerEvent
   | { t: "user_turn"; content: string; image_uri?: string }
   | { t: "load"; turns: Turn[] }
+  | { t: "retry" }
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -84,6 +87,20 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return {
         ...state,
         turns: [...state.turns, userTurn],
+        toolCallIndex: {},
+        status: "streaming",
+        error: null,
+      }
+    }
+
+    // ── Synthetic: user asks for the last response to be regenerated ─────────
+    case "retry": {
+      const last = state.turns[state.turns.length - 1]
+      return {
+        ...state,
+        // Drop the answer being replaced; withAssistantTurn creates a fresh one
+        // as soon as the first delta of the new stream lands.
+        turns: last?.role === "assistant" ? state.turns.slice(0, -1) : state.turns,
         toolCallIndex: {},
         status: "streaming",
         error: null,

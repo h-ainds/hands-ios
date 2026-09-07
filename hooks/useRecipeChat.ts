@@ -20,6 +20,16 @@ export type ChatSendAttachment = {
   imageUri?: string;
 };
 
+export type ChatSendOptions = {
+  /**
+   * Re-run the previous user message to replace the answer it produced.
+   * Skips the optimistic user turn and the user-message write (both already
+   * exist), and overwrites the trailing assistant message on persist instead
+   * of appending a second one.
+   */
+  regenerate?: boolean;
+};
+
 const DEFAULT_IMAGE_CONTEXT = "What can I make with these ingredients?";
 const DEFAULT_TIMEOUT = 30000;
 
@@ -42,6 +52,7 @@ interface UseRecipeChatReturn {
     message: string,
     conversationId?: string,
     payload?: ChatSendAttachment,
+    options?: ChatSendOptions,
   ) => Promise<void>;
   cancelRequest: () => void;
 }
@@ -75,6 +86,7 @@ export function useRecipeChat(
       content: string,
       attachmentId?: string,
       recipes?: RecipeCard[],
+      opts?: { replaceLastAssistant?: boolean },
     ): Promise<number | null> => {
       try {
         const { data: conv } = await supabase
@@ -83,12 +95,22 @@ export function useRecipeChat(
           .eq("id", convId)
           .single();
 
-        const currentContent = (conv?.content as unknown[]) || [];
-        const messageIndex = currentContent.length;
+        const currentContent =
+          (conv?.content as Record<string, unknown>[]) || [];
+
+        // On a regenerate the stale answer is dropped so the rewritten one
+        // takes its index — history must match what the user is looking at.
+        const base =
+          opts?.replaceLastAssistant &&
+          currentContent[currentContent.length - 1]?.role === "assistant"
+            ? currentContent.slice(0, -1)
+            : currentContent;
+
+        const messageIndex = base.length;
         const message: Record<string, unknown> = { role, content };
         if (attachmentId) message.attachment_id = attachmentId;
         if (recipes && recipes.length > 0) message.recipes = recipes;
-        const newContent = [...currentContent, message];
+        const newContent = [...base, message];
 
         await supabase
           .from("conversations")
@@ -112,8 +134,11 @@ export function useRecipeChat(
       message: string,
       conversationId?: string,
       payload?: ChatSendAttachment,
+      options?: ChatSendOptions,
     ) => {
       if (!message.trim() && !payload?.attachmentId) return;
+
+      const regenerate = options?.regenerate === true;
 
       abortControllerRef.current?.abort();
       abortControllerRef.current = new AbortController();
@@ -123,18 +148,25 @@ export function useRecipeChat(
       let activeConversationId = conversationId || currentConversationId;
 
       if (isMountedRef.current) {
-        // Optimistic user turn — the reducer owns it, image included.
-        dispatch({
-          t: "user_turn",
-          content: userMessage,
-          image_uri: payload?.imageUri,
-        });
+        // Optimistic user turn — the reducer owns it, image included. On a
+        // regenerate the user turn is already on screen; the screen dispatches
+        // `retry` instead, which clears the answer we are about to replace.
+        if (!regenerate) {
+          dispatch({
+            t: "user_turn",
+            content: userMessage,
+            image_uri: payload?.imageUri,
+          });
+        }
         setStatus("connecting");
         setError(null);
       }
 
-      // Create or update conversation in Supabase
-      if (!activeConversationId) {
+      // Create or update conversation in Supabase. Skipped on a regenerate —
+      // the user message is already stored and must not be written twice.
+      if (regenerate) {
+        // nothing to write; activeConversationId is whatever the turn used.
+      } else if (!activeConversationId) {
         try {
           const {
             data: { user },
@@ -316,6 +348,7 @@ export function useRecipeChat(
             accumulatedText,
             undefined,
             recipeCards,
+            { replaceLastAssistant: regenerate },
           );
         }
 
