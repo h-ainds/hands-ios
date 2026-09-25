@@ -33,10 +33,10 @@ Two app variants exist via `APP_VARIANT=development` (see `app.config.js`, `eas.
 ## Architecture
 
 ### Client (React Native + Expo Router)
-- **Routing** is file-based via `expo-router` with typed routes. `app/_layout.tsx` is the root: it wraps everything in `AuthProvider → FavoritesProvider → SubscriptionProvider` and gates navigation on auth state (`PUBLIC_ROUTES` list controls what unauthenticated users can reach). `app/(tabs)/` is the authenticated shell (Home / center camera button that routes to `/ask` / You).
+- **Routing** is file-based via `expo-router` with typed routes. `app/_layout.tsx` is the root: it wraps everything in `AuthProvider → FavoritesProvider` and gates navigation on auth state (`PUBLIC_ROUTES` list controls what unauthenticated users can reach). `app/(tabs)/` is the authenticated shell (Home / center camera button that routes to `/ask` / You).
 - **Import alias**: `@/*` maps to repo root (`tsconfig.json`). `supabase/functions` is excluded from the app's tsconfig — edge functions are a separate Deno project.
 - **Styling**: NativeWind (Tailwind) via `className`. Brand palette lives in `tailwind.config.js` (`primary` = `#6CD401` green) and `constants/Colors.ts`. `app/global.css` is imported once in the root layout.
-- **State**: React Context for cross-cutting concerns (`context/AuthContext`, `FavoritesContext`, `SubscriptionContext`); data fetching via hooks in `hooks/` (`useRecipes`, `useFavorites`, `useRecipeChat`, `useUsageTracking`). Subscriptions use RevenueCat (`react-native-purchases`).
+- **State**: React Context for cross-cutting concerns (`context/AuthContext`, `FavoritesContext`); data fetching via hooks in `hooks/` (`useRecipes`, `useFavorites`, `useRecipeChat`, `useUsageTracking`). `useUsageTracking` counts per-day messages/images; its caps are currently off (`LIMITS_ENABLED = false`) until subscriptions return.
 - **Supabase client** (`lib/supabase/client.ts`): a single shared client. Session storage adapter is platform-aware — `expo-secure-store` on native, `localStorage` on web. Reads `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`.
 
 ### Chat pipeline (the core feature)

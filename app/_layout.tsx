@@ -3,7 +3,6 @@ import { useEffect } from 'react'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { FavoritesProvider } from '@/context/FavoritesContext'
-import { SubscriptionProvider } from '@/context/SubscriptionContext'
 import { View, ActivityIndicator } from 'react-native'
 
 // Routes that don't require authentication
@@ -66,9 +65,7 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <FavoritesProvider>
-        <SubscriptionProvider>
-          <RootLayoutNav />
-        </SubscriptionProvider>
+        <RootLayoutNav />
       </FavoritesProvider>
     </AuthProvider>
   )

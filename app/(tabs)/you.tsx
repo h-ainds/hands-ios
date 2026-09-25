@@ -2,18 +2,14 @@ import { useEffect, useState } from 'react'
 import { View, Text, Image, Pressable, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
-import { useSubscription } from '@/context/SubscriptionContext'
 import { supabase } from '@/lib/supabase/client'
 import { useRouter } from 'expo-router'
 import { SymbolView } from 'expo-symbols'
 import { clearAllUserData } from '@/lib/storage'
 import { getUserProfile } from '@/lib/auth'
-import Purchases from 'react-native-purchases'
-import RevenueCatUI from 'react-native-purchases-ui'
 
 export default function ProfileScreen() {
   const { user } = useAuth()
-  const { isPro } = useSubscription()
   const router = useRouter()
   const [profileFirstName, setProfileFirstName] = useState<string | null>(null)
 
@@ -146,27 +142,6 @@ export default function ProfileScreen() {
           <Text className="text-2.5xl font-bold text-black">{firstName}</Text>
           <Text className="text-base text-secondary-muted">{email}</Text>
         </View>
-
-        {/* Subscription Button */}
-        {isPro ? (
-          <Pressable
-            onPress={() => Purchases.showManageSubscriptions()}
-            className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
-          >
-            <SymbolView name="star.fill" size={20} weight="semibold" tintColor="#6CD401" />
-            <Text className="text-black ml-3 text-xl font-bold flex-1">Hands Plus</Text>
-            <SymbolView name="chevron.right" size={16} weight="semibold" tintColor="#9F9F9F" />
-          </Pressable>
-        ) : (
-          <Pressable
-            onPress={() => RevenueCatUI.presentPaywall()}
-            className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
-          >
-            <SymbolView name="star" size={20} weight="semibold" tintColor="#6CD401" />
-            <Text className="text-black ml-3 text-xl font-bold flex-1">Upgrade</Text>
-            <SymbolView name="chevron.right" size={16} weight="semibold" tintColor="#9F9F9F" />
-          </Pressable>
-        )}
 
         {/* Memory Button */}
         <Pressable

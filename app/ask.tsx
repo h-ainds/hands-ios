@@ -10,7 +10,6 @@ import * as ImagePicker from 'expo-image-picker'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
-import RevenueCatUI from 'react-native-purchases-ui'
 import ChatView from '@/components/chat/ChatView'
 import { useRecipeChat } from '@/hooks/useRecipeChat'
 import type { ChatSendAttachment } from '@/hooks/useRecipeChat'
@@ -208,7 +207,7 @@ export default function AskScreen() {
 
   const pickAttachment = useCallback(async (source: ImageSource) => {
     if (!canSendImage) {
-      await RevenueCatUI.presentPaywall()
+      Alert.alert('Daily limit reached', "You've hit today's photo limit. Try again tomorrow.")
       return
     }
     try {
@@ -378,7 +377,7 @@ export default function AskScreen() {
     if (isLoading || !canSubmit) return
 
     if (!canSendMessage) {
-      await RevenueCatUI.presentPaywall()
+      Alert.alert('Daily limit reached', "You've hit today's message limit. Try again tomorrow.")
       return
     }
 
@@ -437,7 +436,7 @@ export default function AskScreen() {
     if (!message.trim() && !payload.attachmentId) return
 
     if (!canSendMessage) {
-      await RevenueCatUI.presentPaywall()
+      Alert.alert('Daily limit reached', "You've hit today's message limit. Try again tomorrow.")
       return
     }
 

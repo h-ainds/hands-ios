@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useAuth } from '@/context/AuthContext'
-import { useSubscription } from '@/context/SubscriptionContext'
 
-// Beta (through launch ~2026-09): generous daily caps so real testers never hit
-// the paywall, while a runaway/abusive user is still bounded per day.
-const FREE_MESSAGE_LIMIT = 100
-const FREE_IMAGE_LIMIT = 25
-const PRO_IMAGE_LIMIT = 50
+// Caps are switched off until subscriptions return — usage is still counted,
+// but nothing is blocked. Flip LIMITS_ENABLED to re-arm them with these numbers.
+const LIMITS_ENABLED = false
+const MESSAGE_LIMIT = 100
+const IMAGE_LIMIT = 25
 
 interface DailyUsage {
   messageCount: number
@@ -16,7 +15,6 @@ interface DailyUsage {
 
 export function useUsageTracking() {
   const { user } = useAuth()
-  const { isPro } = useSubscription()
   const [usage, setUsage] = useState<DailyUsage>({ messageCount: 0, imageCount: 0 })
 
   const storageKey = user ? `usage_${user.id}_${new Date().toDateString()}` : null
@@ -47,13 +45,11 @@ export function useUsageTracking() {
     await persist({ ...usage, imageCount: usage.imageCount + 1 })
   }, [usage, persist])
 
-  const canSendMessage = isPro || usage.messageCount < FREE_MESSAGE_LIMIT
-  const canSendImage = isPro ? usage.imageCount < PRO_IMAGE_LIMIT : usage.imageCount < FREE_IMAGE_LIMIT
+  const canSendMessage = !LIMITS_ENABLED || usage.messageCount < MESSAGE_LIMIT
+  const canSendImage = !LIMITS_ENABLED || usage.imageCount < IMAGE_LIMIT
 
-  const messagesRemaining = isPro ? Infinity : Math.max(0, FREE_MESSAGE_LIMIT - usage.messageCount)
-  const imagesRemaining = isPro
-    ? Math.max(0, PRO_IMAGE_LIMIT - usage.imageCount)
-    : Math.max(0, FREE_IMAGE_LIMIT - usage.imageCount)
+  const messagesRemaining = LIMITS_ENABLED ? Math.max(0, MESSAGE_LIMIT - usage.messageCount) : Infinity
+  const imagesRemaining = LIMITS_ENABLED ? Math.max(0, IMAGE_LIMIT - usage.imageCount) : Infinity
 
   return {
     usage,
