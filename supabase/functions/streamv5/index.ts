@@ -190,10 +190,15 @@ async function* readSSEData(body: ReadableStream<Uint8Array>): AsyncGenerator<un
 // raw_model_stream_event (response.output_text.delta) → emit text.delta in real time.
 // run_item_stream_event / tool_called (response.output_item.done, function_call) → emit tool.call.started.
 // message_output_created (response.output_item.done, message) → collected; caller emits message.completed.
+//
+// separateFromPrior: an earlier round in this turn already streamed text. The
+// client appends every text.delta to one bubble, so prefix this round's first
+// delta with a paragraph break — otherwise the rounds glue together ("…Frittata.Here…").
 async function streamRound(
   input: unknown[],
   apiKey: string,
   emit: (event: ServerEvent) => void,
+  separateFromPrior: boolean,
 ): Promise<ResponsesOutput> {
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -211,7 +216,10 @@ async function streamRound(
     console.log("[stream]", e.type)
 
     if (e.type === "response.output_text.delta") {
-      emit({ t: "text.delta", delta: String(e.delta ?? "") })
+      const delta = String(e.delta ?? "")
+      if (!delta) continue
+      emit({ t: "text.delta", delta: separateFromPrior ? `\n\n${delta}` : delta })
+      separateFromPrior = false
     } else if (e.type === "response.output_item.done") {
       const item = e.item as ResponsesOutput[number]
       output.push(item)
@@ -231,6 +239,13 @@ async function streamRound(
   }
 
   return output
+}
+
+// True if the round produced any visible assistant text.
+function hasText(output: ResponsesOutput): boolean {
+  return output.some((o) =>
+    o.type === "message" && (o.content ?? []).some((c) => c.type === "output_text" && !!c.text?.trim())
+  )
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -314,10 +329,13 @@ Deno.serve(async (req) => {
         }
 
         let input: unknown[] = [...priorItems, userMsg]
+        let textEmitted = false
 
         for (let round = 0; round < MAX_ROUNDS; round++) {
           // Text deltas and tool.call.started events are emitted inside streamRound.
-          const output = await streamRound(input, openAiKey, emit)
+          const output = await streamRound(input, openAiKey, emit, textEmitted)
+          const roundHasText = hasText(output)
+          textEmitted ||= roundHasText
           const toolCalls = output.filter((o) => o.type === "function_call")
 
           // ── No tool calls: message_output_created — final text already streamed ──
@@ -385,6 +403,13 @@ Deno.serve(async (req) => {
 
           // Advance input for next round: prior output + tool results
           input = [...input, ...output, ...functionOutputs]
+
+          // Prose-then-search is a complete reply: the paragraph is streamed and the
+          // cards are the rest of the answer. Another round can only restate the dish
+          // list (SYSTEM_PROMPT rule 3 forbids it, but we don't rely on compliance),
+          // so end the turn here. If the model searched before writing anything, fall
+          // through so the next round can supply the prose.
+          if (roundHasText && toolCalls.every((c) => c.name === "search_recipes")) break
         }
 
         // Persist everything added this turn (user message + model output + tool I/O).
