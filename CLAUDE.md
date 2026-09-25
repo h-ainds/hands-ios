@@ -18,7 +18,7 @@ yarn web            # expo start --web
 npx tsc --noEmit    # typecheck (strict mode; the only "test" gate in the repo)
 ```
 
-There is **no test runner, linter, or CI configured** — `react-test-renderer` is installed but no test script exists. `search_test.ts` in `streamv5/` is a Deno test file, not wired into any command. Don't invent `yarn test`/`yarn lint`.
+There is **no test runner, linter, or CI configured** — `react-test-renderer` is installed but no test script exists. Don't invent `yarn test`/`yarn lint`.
 
 Edge functions & DB (Supabase CLI, installed as a dev dependency — use `npx supabase`):
 
