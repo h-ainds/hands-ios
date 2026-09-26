@@ -5,6 +5,7 @@ import type { AssistantTurn, Block, Turn } from '@/types/chat'
 import RecipeCard from '@/components/RecipeCard'
 import RecipeCardSkeleton from './RecipeCardSkeleton'
 import MessageActions, { MESSAGE_ACTIONS_EDGE_INSET } from './MessageActions'
+import LoadingVerb from './LoadingVerb'
 
 // ─── Markdown styles (unchanged) ──────────────────────────────────────────────
 
@@ -195,12 +196,8 @@ export default function ChatView({
       ))}
 
       {isTyping && (
-        <View className="flex-row justify-start px-4 mb-4">
-          <View className="flex-row items-center gap-1.5 px-3 py-3">
-            <View className="w-2 h-2 bg-secondary-muted rounded-full animate-bounce" />
-            <View className="w-2 h-2 bg-secondary-muted rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-            <View className="w-2 h-2 bg-secondary-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-          </View>
+        <View className="px-4 py-1 mb-4">
+          <LoadingVerb />
         </View>
       )}
     </ScrollView>
