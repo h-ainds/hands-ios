@@ -17,15 +17,16 @@ export interface RecipeCard {
 }
 
 /**
- * User preferences resolved from UserTasteProfiles before the edge fn runs.
+ * User preferences resolved from user_preferences before the edge fn runs.
  * diet / allergens / dislikes are parsed from raw_preferences by the caller;
- * raw_preferences is the verbatim taste_preferences[] stored in Supabase.
+ * raw_preferences is the keyed user_preferences.preferences object
+ * (see lib/preferences.ts), e.g. { preferred_cuisines: ["Latin / Mexican"], cooking_for: "Just myself" }.
  */
 export interface Prefs {
   diet: string[]        // e.g. ["vegetarian", "gluten-free"]
   allergens: string[]   // e.g. ["peanuts", "shellfish"]
   dislikes: string[]    // e.g. ["cilantro", "blue cheese"]
-  raw_preferences: string[] | null  // taste_preferences column verbatim
+  raw_preferences: Record<string, string | string[]> | null  // user_preferences.preferences verbatim
 }
 
 // ─── API Request ───────────────────────────────────────────────────────────────

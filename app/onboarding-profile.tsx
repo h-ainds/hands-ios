@@ -19,9 +19,18 @@ import {
   createUserProfile,
   checkOnboardingStatus,
   getAndClearSignupData,
-  createTasteProfile,
+  saveUserPreferences,
 } from '@/lib/auth'
-import { formatOnboardingPreferenceLine, parsePreferenceLine } from '@/lib/onboarding-preference-lines'
+import {
+  OTHER_OPTION,
+  PREFERENCE_QUESTIONS,
+  preferenceRows,
+  type PreferenceKey,
+  type UserPreferences,
+} from '@/lib/preferences'
+
+const emptyByKey = <T,>(value: T) =>
+  Object.fromEntries(PREFERENCE_QUESTIONS.map((q) => [q.key, value])) as Record<PreferenceKey, T>
 
 function slugifyUsername(input: string) {
   return input
@@ -42,121 +51,15 @@ function generateUsername(email?: string, firstName?: string) {
 export default function OnboardingProfileScreen() {
   const router = useRouter()
 
-  type QuestionKey =
-    | 'cooking_effort'
-    | 'dietary_preferences'
-    | 'cuisines'
-    | 'cooking_for'
-    | 'meal_type'
-    | 'pantry_situation'
-
-  type Question = {
-    key: QuestionKey
-    title: string
-    options: string[]
-    multi: boolean
-    showNumbers?: boolean
-  }
-
-  const questions: Question[] = [
-    {
-      key: 'cooking_effort',
-      title: 'What kind of cooking are you up for?',
-      options: [
-        'Quick & easy (under 30 min)',
-        'Moderate effort (30-60 min)',
-        'I enjoy longer projects',
-        'It varies',
-        'Something else ...',
-      ],
-      multi: false,
-      showNumbers: true,
-    },
-    {
-      key: 'dietary_preferences',
-      title: 'Any dietary needs or preferences?',
-      options: [
-        'Vegetarian / vegan',
-        'Gluten-free',
-        'Low-carb / keto',
-        'No restrictions',
-        'Something else ...',
-      ],
-      multi: true,
-    },
-    {
-      key: 'cuisines',
-      title: 'What cuisines do you enjoy most?',
-      options: [
-        'Asian (Thai, Japanese, Chinese...)',
-        'Mediterranean / Middle Eastern',
-        'American / comfort food',
-        'Latin / Mexican',
-        'Something else ...',
-      ],
-      multi: true,
-    },
-    {
-      key: 'cooking_for',
-      title: 'Who are you usually cooking for?',
-      options: [
-        'Just myself',
-        'Me + one other',
-        'Family / group (4+)',
-        'It varies',
-        'Something else ...',
-      ],
-      multi: false,
-      showNumbers: true,
-    },
-    {
-      key: 'pantry_situation',
-      title: "What's your fridge/pantry situation usually like?",
-      options: [
-        'Well-stocked with staples',
-        'I prefer recipes with few ingredients',
-        'I shop fresh for each meal',
-        'I rely a lot on canned/frozen',
-        'Something else ...',
-      ],
-      multi: true,
-    },
-    {
-      key: 'meal_type',
-      title: 'What kind of meal do you need most?',
-      options: [
-        'Weeknight dinners',
-        'Meal prep / batch cooking',
-        'Impressive dinner party dishes',
-        'All of the above',
-        'Something else ...',
-      ],
-      multi: false,
-      showNumbers: true,
-    },
-  ]
+  const questions = PREFERENCE_QUESTIONS
 
   /** 0 = name, 1 … questions.length = questionnaire */
   const [currentStep, setCurrentStep] = useState(0)
-  const [answers, setAnswers] = useState<Record<QuestionKey, string[]>>({
-    cooking_effort: [],
-    dietary_preferences: [],
-    cuisines: [],
-    cooking_for: [],
-    meal_type: [],
-    pantry_situation: [],
-  })
-  const [otherText, setOtherText] = useState<Record<QuestionKey, string>>({
-    cooking_effort: '',
-    dietary_preferences: '',
-    cuisines: '',
-    cooking_for: '',
-    meal_type: '',
-    pantry_situation: '',
-  })
+  const [answers, setAnswers] = useState<Record<PreferenceKey, string[]>>(() => emptyByKey<string[]>([]))
+  const [otherText, setOtherText] = useState<Record<PreferenceKey, string>>(() => emptyByKey(''))
   const [submitting, setSubmitting] = useState(false)
-  /** Saved onboarding lines — same strings stored in Memory as taste_preferences (no AI chips). */
-  const [savedPreferenceLines, setSavedPreferenceLines] = useState<string[]>([])
+  /** Saved onboarding answers — the same keyed object stored in user_preferences.preferences. */
+  const [savedPreferences, setSavedPreferences] = useState<UserPreferences>({})
   const [showSuccessStep, setShowSuccessStep] = useState(false)
 
   // Data states
@@ -206,18 +109,18 @@ export default function OnboardingProfileScreen() {
       return
     }
 
-    const memoryPreferences = questions.map((question) => {
-      const selected = answers[question.key]
-        .filter((option) => option !== 'Something else ...')
-        .join(', ')
-      const other = otherText[question.key].trim()
-      const value = [selected, other].filter(Boolean).join(selected && other ? ', ' : '')
-      return formatOnboardingPreferenceLine(question.title, value)
-    })
+    // Multi-select → string[], single-select → string; unanswered questions are omitted.
+    const preferences = Object.fromEntries(
+      questions.flatMap((question) => {
+        const selected = answers[question.key].filter((option) => option !== OTHER_OPTION)
+        const other = otherText[question.key].trim()
+        const values = other ? [...selected, other] : selected
+        if (values.length === 0) return []
+        return [[question.key, question.multi ? values : values.join(', ')]]
+      })
+    ) as UserPreferences
 
-    const tasteText = memoryPreferences.join('\n')
-
-    if (!tasteText.trim()) {
+    if (Object.keys(preferences).length === 0) {
       Alert.alert('Error', 'Please answer at least one onboarding question')
       return
     }
@@ -236,11 +139,10 @@ export default function OnboardingProfileScreen() {
         email: user.email,
       })
 
-      // Store answers only — no taste-vectors / NLP step. Memory edits taste_preferences directly.
-      console.log('[Onboarding] Saving taste profile (questionnaire lines only)')
-      await createTasteProfile(user.id, tasteText, {}, memoryPreferences)
+      console.log('[Onboarding] Saving preferences')
+      await saveUserPreferences(user.id, preferences)
 
-      setSavedPreferenceLines(memoryPreferences)
+      setSavedPreferences(preferences)
       setShowSuccessStep(true)
     } catch (err: any) {
       console.error('[Onboarding] Error:', err)
@@ -269,7 +171,7 @@ export default function OnboardingProfileScreen() {
   const toggleOption = useCallback(
     (option: string) => {
       if (currentStep === 0 || !question) return
-      if (option === 'Something else ...') {
+      if (option === OTHER_OPTION) {
         otherInputRef.current?.focus()
         return
       }
@@ -325,56 +227,48 @@ export default function OnboardingProfileScreen() {
     router.back()
   }
 
-  // Success step: show saved questionnaire lines (same items as Memory → taste_preferences)
+  // Success step: show saved answers (same rows as the Preferences screen)
   if (showSuccessStep) {
+    const savedRows = preferenceRows(savedPreferences)
     return (
       <SafeAreaView className="flex-1 bg-white">
         <View className="flex-1 px-6 pt-20">
           <View className="mt-0">
             <Text className="text-3xl font-extrabold tracking-tighter text-black">
-              {savedPreferenceLines.length > 0
+              {savedRows.length > 0
                 ? `Nice to meet you, ${(firstName.trim() || 'Friend').split(/\s+/)[0]}`
                 : "You're all set"}
             </Text>
             <Text className="text-base tracking-tighter text-secondary-placeholder mt-2">
-              {savedPreferenceLines.length > 0
-                ? "Here's what we saved. Edit anytime in Memory."
+              {savedRows.length > 0
+                ? "Here's what we saved. Edit anytime in Preferences."
                 : 'Welcome to Hands. Get started below.'}
             </Text>
           </View>
-          {savedPreferenceLines.length > 0 && (
+          {savedRows.length > 0 && (
             <ScrollView
               className="mt-8 flex-1"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ gap: 12, paddingBottom: 8 }}
             >
-              {savedPreferenceLines.map((line, index) => {
-                const parsed = parsePreferenceLine(line)
-                return (
-                  <View
-                    key={`${index}-${line.slice(0, 32)}`}
-                    className="w-full rounded-2xl bg-white pl-4 pr-4 py-3"
-                    style={{
-                      shadowColor: '#000',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.06,
-                      shadowRadius: 9,
-                      elevation: 2,
-                    }}
-                  >
-                    {parsed.question ? (
-                      <>
-                        <Text className="text-xs text-black/50 leading-5 mb-1">{parsed.question}</Text>
-                        <Text className="text-base text-black leading-6">
-                          {parsed.answer.trim() ? parsed.answer : '—'}
-                        </Text>
-                      </>
-                    ) : (
-                      <Text className="text-base text-black leading-6">{line}</Text>
-                    )}
-                  </View>
-                )
-              })}
+              {savedRows.map((row) => (
+                <View
+                  key={row.kind === 'answer' ? row.key : `note-${row.index}`}
+                  className="w-full rounded-2xl bg-white pl-4 pr-4 py-3"
+                  style={{
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.06,
+                    shadowRadius: 9,
+                    elevation: 2,
+                  }}
+                >
+                  {row.label ? (
+                    <Text className="text-xs text-black/50 leading-5 mb-1">{row.label}</Text>
+                  ) : null}
+                  <Text className="text-base text-black leading-6">{row.text}</Text>
+                </View>
+              ))}
             </ScrollView>
           )}
           <TouchableOpacity
@@ -452,7 +346,7 @@ export default function OnboardingProfileScreen() {
 
                 <View className="mt-7 gap-3">
                   {question.options.map((option, index) => {
-                    const isOther = option === 'Something else ...'
+                    const isOther = option === OTHER_OPTION
                     const selected = isOther
                       ? otherForStep.trim().length > 0
                       : selectedForStep.includes(option)

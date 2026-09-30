@@ -6,7 +6,7 @@ import { SymbolView, type SymbolViewProps } from 'expo-symbols'
 
 const ICON_SIZE = 18
 const ICON_WEIGHT = 'semibold' as const
-const ICON_COLOR = '#B2B2B2'
+const ICON_COLOR = '#58575C' // secondary-active
 
 /** Visible icon is 18×18; the tappable box around it is larger for usability. */
 const HIT_BOX = 34

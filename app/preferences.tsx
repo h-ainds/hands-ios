@@ -15,11 +15,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
 import { useAuth } from '@/context/AuthContext'
-import { getTasteProfile, updateTastePreferences } from '@/lib/auth'
+import { getUserPreferences, saveUserPreferences } from '@/lib/auth'
 import {
-  formatOnboardingPreferenceLine,
-  parsePreferenceLine,
-} from '@/lib/onboarding-preference-lines'
+  preferenceRows,
+  withRowText,
+  type PreferenceRow,
+  type UserPreferences,
+} from '@/lib/preferences'
 import BackButton from '@/components/BackButton'
 
 const MAX_CHIPS = 7
@@ -36,23 +38,21 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true)
 }
 
-export default function MemoryScreen() {
+export default function PreferencesScreen() {
   const { user } = useAuth()
-  const [list, setList] = useState<string[]>([])
+  const [prefs, setPrefs] = useState<UserPreferences>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [editingIndex, setEditingIndex] = useState<number | null>(null)
-  /** When set, the stored line is an onboarding Q&A row — only `editDraft` (answer) is editable. */
-  const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
+  /** Row being edited. For onboarding answers the question is read-only — only `editDraft` (answer) is editable. */
+  const [editingRow, setEditingRow] = useState<PreferenceRow | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [addDraft, setAddDraft] = useState<string | null>(null)
 
   const load = useCallback(() => {
     if (!user?.id) return
     setLoading(true)
-    getTasteProfile(user.id).then((profile) => {
-      const prefs = profile?.taste_preferences ?? null
-      setList(Array.isArray(prefs) ? prefs : [])
+    getUserPreferences(user.id).then((next) => {
+      setPrefs(next)
       setLoading(false)
     })
   }, [user?.id])
@@ -62,12 +62,12 @@ export default function MemoryScreen() {
   }, [load])
 
   const persist = useCallback(
-    async (next: string[]) => {
+    async (next: UserPreferences) => {
       if (!user?.id) return
       setSaving(true)
       try {
-        await updateTastePreferences(user.id, next)
-        setList(next)
+        await saveUserPreferences(user.id, next)
+        setPrefs(next)
       } catch (e) {
         Alert.alert('Error', (e as Error).message ?? 'Failed to save preferences')
       } finally {
@@ -77,8 +77,10 @@ export default function MemoryScreen() {
     [user?.id]
   )
 
+  const rows = preferenceRows(prefs)
+
   const handleAdd = () => {
-    if (list.length >= MAX_CHIPS) return
+    if (rows.length >= MAX_CHIPS) return
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
     setAddDraft('')
   }
@@ -92,69 +94,53 @@ export default function MemoryScreen() {
       return
     }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
-    persist([...list, trimmed])
+    persist({ ...prefs, notes: [...(prefs.notes ?? []), trimmed] })
   }
 
   const handleCancelAdd = () => setAddDraft(null)
 
-  const handleEdit = (index: number) => {
-    const line = list[index] ?? ''
-    const parsed = parsePreferenceLine(line)
-    setEditingIndex(index)
-    setEditingQuestion(parsed.question)
-    setEditDraft(parsed.answer)
+  const handleEdit = (row: PreferenceRow) => {
+    setEditingRow(row)
+    setEditDraft(row.text)
   }
 
   const handleSaveEdit = () => {
-    if (editingIndex == null) return
+    if (editingRow == null) return
     const trimmed = editDraft.trim()
     if (trimmed && wordCount(trimmed) > MAX_WORDS) {
       Alert.alert('Invalid', 'Maximum 25 words per answer.')
       return
     }
-    const idx = editingIndex
-    const question = editingQuestion
-    setEditingIndex(null)
-    setEditingQuestion(null)
+    const row = editingRow
+    setEditingRow(null)
     setEditDraft('')
-    if (!trimmed) {
-      const next = list.filter((_, i) => i !== idx)
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
-      persist(next)
-      return
-    }
-    const line = question
-      ? formatOnboardingPreferenceLine(question, trimmed)
-      : trimmed
-    const next = [...list]
-    next[idx] = line
-    persist(next)
+    if (!trimmed) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+    persist(withRowText(prefs, row, trimmed))
   }
 
   const handleCancelEdit = () => {
-    setEditingIndex(null)
-    setEditingQuestion(null)
+    setEditingRow(null)
     setEditDraft('')
   }
 
-  const handleDelete = (index: number) => {
-    Alert.alert('Delete this memory?', 'This preference is about to be deleted.', [
+  const handleDelete = (row: PreferenceRow) => {
+    Alert.alert('Delete this preference?', 'This preference is about to be deleted.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: () => {
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
-          persist(list.filter((_, i) => i !== index))
+          persist(withRowText(prefs, row, ''))
         },
       },
     ])
   }
   
-  const handleEllipsis = (index: number) => {
+  const handleEllipsis = (row: PreferenceRow) => {
     Alert.alert('', '', [
-      { text: 'Edit', onPress: () => handleEdit(index) },
-      { text: 'Delete', style: 'destructive', onPress: () => handleDelete(index) },
+      { text: 'Edit', onPress: () => handleEdit(row) },
+      { text: 'Delete', style: 'destructive', onPress: () => handleDelete(row) },
       { text: 'Cancel', style: 'cancel' },
     ])
   }
@@ -176,7 +162,8 @@ export default function MemoryScreen() {
   }
 
   const addWords = addDraft != null ? wordCount(addDraft) : 0
-  const editWords = editingIndex != null ? wordCount(editDraft) : 0
+  const editWords = editingRow != null ? wordCount(editDraft) : 0
+  const rowId = (row: PreferenceRow) => (row.kind === 'answer' ? row.key : `note-${row.index}`)
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -192,36 +179,34 @@ export default function MemoryScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
-          <Text className="text-3xl font-extrabold tracking-tighter text-black mb-2">Memory</Text>
+          <Text className="text-3xl font-extrabold tracking-tighter text-black mb-2">Preferences</Text>
           <Text className="text-sm text-black/55 mb-6 leading-5">
-            Your preferences will apply to all conversations. 
+            Your preferences will apply to all conversations.
           </Text>
 
           {loading ? (
             <ActivityIndicator size="small" className="py-4" />
           ) : (
             <>
-              <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-sm text-black/60">Saved preferences</Text>
+              <View className="flex-row items-center justify-end mb-2">
                 <TouchableOpacity
                   onPress={handleAdd}
-                  disabled={list.length >= MAX_CHIPS || saving}
+                  disabled={rows.length >= MAX_CHIPS || saving}
                   className="rounded-full bg-primary px-4 py-2"
-                  style={{ opacity: list.length >= MAX_CHIPS || saving ? 0.5 : 1 }}
+                  style={{ opacity: rows.length >= MAX_CHIPS || saving ? 0.5 : 1 }}
                 >
                   <Text className="text-white font-semibold">Add</Text>
                 </TouchableOpacity>
               </View>
 
               <View className="gap-3">
-                {list.map((line, index) => {
-                  const parsed = parsePreferenceLine(line)
-                  const isStructured = parsed.question != null
+                {rows.map((row) => {
+                  const isStructured = row.label != null
 
-                  return editingIndex === index ? (
-                    <View key={`edit-${index}`} className="w-full rounded-2xl bg-[#F7F7F7] p-4">
-                      {parsed.question ? (
-                        <Text className="text-xs text-black/50 mb-2 leading-5">{parsed.question}</Text>
+                  return editingRow != null && rowId(editingRow) === rowId(row) ? (
+                    <View key={`edit-${rowId(row)}`} className="w-full rounded-2xl bg-[#F7F7F7] p-4">
+                      {row.label ? (
+                        <Text className="text-xs text-black/50 mb-2 leading-5">{row.label}</Text>
                       ) : (
                         <Text className="text-xs text-black/45 mb-2">Custom note</Text>
                       )}
@@ -249,7 +234,7 @@ export default function MemoryScreen() {
                     </View>
                   ) : (
                     <View
-                      key={`row-${index}`}
+                      key={`row-${rowId(row)}`}
                       className="w-full flex-row items-start rounded-2xl bg-white pl-4 pr-2 py-3 gap-2"
                       style={{
                         shadowColor: '#000',
@@ -260,18 +245,12 @@ export default function MemoryScreen() {
                       }}
                     >
                       <View className="flex-1 min-w-0 pr-1">
-                        {parsed.question ? (
-                          <>
-                            <Text className="text-xs text-black/50 leading-5 mb-1">{parsed.question}</Text>
-                            <Text className="text-base text-black leading-6">
-                              {parsed.answer.trim() ? parsed.answer : '—'}
-                            </Text>
-                          </>
-                        ) : (
-                          <Text className="text-base text-black leading-6">{line}</Text>
-                        )}
+                        {row.label ? (
+                          <Text className="text-xs text-black/50 leading-5 mb-1">{row.label}</Text>
+                        ) : null}
+                        <Text className="text-base text-black leading-6">{row.text}</Text>
                       </View>
-                      <TouchableOpacity onPress={() => handleEllipsis(index)} className="p-2 mt-0.5">
+                      <TouchableOpacity onPress={() => handleEllipsis(row)} className="p-2 mt-0.5">
                         <SymbolView name="ellipsis" size={18} tintColor="#000000" />
                       </TouchableOpacity>
                     </View>
@@ -311,7 +290,7 @@ export default function MemoryScreen() {
                 )}
               </View>
 
-              {list.length === 0 && addDraft == null && !loading && (
+              {rows.length === 0 && addDraft == null && !loading && (
                 <Text className="text-base text-black/40 mt-2">
                   No preferences yet. Complete onboarding or tap Add for a custom note.
                 </Text>

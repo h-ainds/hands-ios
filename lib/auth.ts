@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase/client'
 import { asyncStorage } from '@/lib/storage'
 import { getAuthCallbackRedirectUrl, getEmailConfirmationRedirectUrl } from '@/lib/auth-redirect'
+import { normalizePreferences, type UserPreferences } from '@/lib/preferences'
 
 export interface AuthError extends Error {
   message: string
@@ -221,36 +222,24 @@ export async function getCurrentUser() {
   }
 }
 
-// Get taste profile (preference chips + raw text) for a user
-export async function getTasteProfile(userId: string): Promise<{
-  taste_text: string | null
-  taste_preferences: string[] | null
-} | null> {
+// Get a user's keyed preferences (empty object when they have none)
+export async function getUserPreferences(userId: string): Promise<UserPreferences> {
   try {
     const { data, error } = await supabase
-      .from('UserTasteProfiles')
-      .select('taste_text, taste_preferences')
+      .from('user_preferences')
+      .select('preferences')
       .eq('id', userId)
       .maybeSingle()
 
     if (error) {
-      console.error('Error fetching taste profile:', error)
-      return null
+      console.error('Error fetching preferences:', error)
+      return {}
     }
-    if (!data) return null
 
-    const prefs = data.taste_preferences
-    const taste_preferences = Array.isArray(prefs)
-      ? (prefs as unknown[]).filter((x): x is string => typeof x === 'string').map(s => String(s).trim()).filter(Boolean)
-      : null
-
-    return {
-      taste_text: data.taste_text ?? null,
-      taste_preferences: taste_preferences && taste_preferences.length > 0 ? taste_preferences : null,
-    }
+    return normalizePreferences(data?.preferences)
   } catch (error) {
-    console.error('Error fetching taste profile:', error)
-    return null
+    console.error('Error fetching preferences:', error)
+    return {}
   }
 }
 
@@ -258,7 +247,7 @@ export async function getTasteProfile(userId: string): Promise<{
 export async function getUserProfile(userId: string) {
   try {
     const { data, error } = await supabase
-      .from('Users')
+      .from('users')
       .select('*')
       .eq('id', userId)
       .single()
@@ -360,7 +349,7 @@ export async function createUserProfile({
 }) {
   try {
     const { data, error } = await supabase
-      .from('Users')
+      .from('users')
       .upsert({
         id: userId,
         first_name: firstName,
@@ -378,60 +367,8 @@ export async function createUserProfile({
   }
 }
 
-// Create taste profile with vectors and optional preference chips
-export async function createTasteProfile(
-  userId: string,
-  tasteText: string,
-  vectors: any,
-  tastePreferences?: string[]
-) {
-  try {
-    const baseRow: Record<string, unknown> = {
-      id: userId,
-      taste_text: tasteText,
-      vectors,
-      created_at: new Date().toISOString(),
-    }
-
-    const rowWithPrefs = { ...baseRow }
-    if (tastePreferences != null && Array.isArray(tastePreferences) && tastePreferences.length > 0) {
-      rowWithPrefs.taste_preferences = tastePreferences
-    }
-
-    const { data, error } = await supabase
-      .from('UserTasteProfiles')
-      .upsert(rowWithPrefs)
-      .select()
-
-    if (error) {
-      // Schema cache missing taste_preferences (migration not run): retry without it so onboarding still completes
-      const isMissingColumn =
-        error.code === 'PGRST204' ||
-        (typeof (error as { message?: string }).message === 'string' &&
-          (error as { message?: string }).message?.includes('taste_preferences'))
-      if (isMissingColumn && rowWithPrefs.taste_preferences !== undefined) {
-        const { data: retryData, error: retryError } = await supabase
-          .from('UserTasteProfiles')
-          .upsert(baseRow)
-          .select()
-        if (retryError) throw retryError
-        return retryData
-      }
-      throw error
-    }
-
-    return data
-  } catch (error) {
-    console.error('Error creating taste profile:', error)
-    throw new Error((error as AuthError).message || 'Failed to create taste profile')
-  }
-}
-
-// Update only taste_preferences for a user (used by Memory screen)
-export async function updateTastePreferences(userId: string, preferences: string[]): Promise<void> {
-  const { error } = await supabase
-    .from('UserTasteProfiles')
-    .update({ taste_preferences: preferences })
-    .eq('id', userId)
-  if (error) throw new Error((error as AuthError).message || 'Failed to update preferences')
+// Create or replace a user's keyed preferences (onboarding + Preferences screen)
+export async function saveUserPreferences(userId: string, preferences: UserPreferences): Promise<void> {
+  const { error } = await supabase.from('user_preferences').upsert({ id: userId, preferences })
+  if (error) throw new Error((error as AuthError).message || 'Failed to save preferences')
 }

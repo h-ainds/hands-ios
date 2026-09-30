@@ -73,8 +73,8 @@ Deno.serve(async (req) => {
     const tables: { table: string; column: string }[] = [
       { table: "conversations", column: "user_id" },
       { table: "recipe_interactions", column: "user_id" },
-      { table: "UserTasteProfiles", column: "id" },
-      { table: "Users", column: "id" },
+      { table: "user_preferences", column: "id" },
+      { table: "users", column: "id" },
     ]
 
     for (const { table, column } of tables) {

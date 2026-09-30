@@ -1,4 +1,4 @@
-his file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
 
@@ -55,12 +55,10 @@ The chat flow spans three layers that share type contracts in **`types/chat.ts`*
 `search_recipes` calls the `search_recipes_hybrid` Postgres RPC (`supabase/migrations/20260628000000_*.sql`): cosine KNN over `recipe_embeddings` (HNSW index) fused with full-text search over `recipes` via **Reciprocal Rank Fusion**. Embeddings use OpenAI `text-embedding-3-small` (1536 dims). The RPC is a pure relevance ranker — **all diet/allergen/dislike filtering is done by the model**, not SQL. `get_recipe_details` is a separate RPC.
 
 ### Other edge functions
-`analyze-image` (ingredient detection from a photo — feeds the camera flow), `taste-vectors` (user taste-preference embeddings), `delete-account`.
+`analyze-image` (ingredient detection from a photo — feeds the camera flow), `delete-account`.
 
 ## Data model notes
 - `recipes.id` is a **bigint**; `types/chat.ts` stringifies it at every boundary (`RecipeCard.id: string`) so the edge/client never casts. `types/index.ts` `Recipe` uses `id: number`.
-- Key tables: `recipes`, `recipe_embeddings`, `conversations` (chat history as jsonb), `conversation_items` (agent session log), `user_favorite_recipes`, `UserTasteProfiles`.
+- Key tables: `recipes`, `recipe_embeddings`, `conversations` (chat history as jsonb), `conversation_items` (agent session log), `user_favorite_recipes`, `users` (profile: first name, email), `user_preferences`.
+- `user_preferences` is one row per user (`id` = `users.id` = `auth.users.id`, primary key). Its `preferences` column is a **keyed jsonb object** (`preferred_cuisines: string[]`, `cooking_for: string`, …, `notes: string[]`), enforced by a CHECK constraint. Keys, question titles and parsing live in `lib/preferences.ts`; titles are display-only. Read/write via `getUserPreferences` / `saveUserPreferences` in `lib/auth.ts`.
 - Auth redirect setup (OAuth deep links, email confirmation) is documented in `docs/SUPABASE_AUTH_REDIRECTS.md` — non-obvious Supabase dashboard config lives there.
-
-## ⚠️ Database safety — read before touching Supabase
-The **`featured_library`** table is a dangerous legacy remnant: it is linked to the main **`recipes`** table such that changes mirror between them, and **deleting `featured_library` can cascade into deleting `recipes`** (months of production data). Before any schema/RLS/trigger change, inspect the linkage (triggers, rules, views, functions, RLS policies, foreign keys) and plan/test carefully. Never drop or bulk-modify these tables without explicit confirmation. Prefer read-only introspection first; test on a branch, not production.
