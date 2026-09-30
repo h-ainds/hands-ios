@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   ScrollView,
   KeyboardAvoidingView,
+  Switch,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
@@ -22,10 +23,18 @@ import {
   type PreferenceRow,
   type UserPreferences,
 } from '@/lib/preferences'
+import { getPreferencesEnabled, setPreferencesEnabled } from '@/lib/personalization'
 import BackButton from '@/components/BackButton'
 
-const MAX_CHIPS = 7
 const MAX_WORDS = 25
+
+const CARD_SHADOW = {
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.06,
+  shadowRadius: 9,
+  elevation: 2,
+}
 
 function wordCount(s: string): number {
   return s
@@ -38,15 +47,15 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true)
 }
 
-export default function PreferencesScreen() {
+export default function PersonalizationScreen() {
   const { user } = useAuth()
   const [prefs, setPrefs] = useState<UserPreferences>({})
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  /** Whether preferences personalize chat replies. Stored on the device; off by default. */
+  const [personalized, setPersonalized] = useState(false)
   /** Row being edited. For onboarding answers the question is read-only — only `editDraft` (answer) is editable. */
   const [editingRow, setEditingRow] = useState<PreferenceRow | null>(null)
   const [editDraft, setEditDraft] = useState('')
-  const [addDraft, setAddDraft] = useState<string | null>(null)
 
   const load = useCallback(() => {
     if (!user?.id) return
@@ -61,43 +70,32 @@ export default function PreferencesScreen() {
     load()
   }, [load])
 
+  useEffect(() => {
+    getPreferencesEnabled().then(setPersonalized)
+  }, [])
+
+  const handleTogglePersonalized = (next: boolean) => {
+    setPersonalized(next)
+    setPreferencesEnabled(next).catch((e) => {
+      setPersonalized(!next)
+      Alert.alert('Error', (e as Error).message ?? 'Failed to save setting')
+    })
+  }
+
   const persist = useCallback(
     async (next: UserPreferences) => {
       if (!user?.id) return
-      setSaving(true)
       try {
         await saveUserPreferences(user.id, next)
         setPrefs(next)
       } catch (e) {
         Alert.alert('Error', (e as Error).message ?? 'Failed to save preferences')
-      } finally {
-        setSaving(false)
       }
     },
     [user?.id]
   )
 
   const rows = preferenceRows(prefs)
-
-  const handleAdd = () => {
-    if (rows.length >= MAX_CHIPS) return
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
-    setAddDraft('')
-  }
-
-  const handleSaveNew = () => {
-    const trimmed = addDraft?.trim() ?? ''
-    setAddDraft(null)
-    if (!trimmed) return
-    if (wordCount(trimmed) > MAX_WORDS) {
-      Alert.alert('Invalid', 'Maximum 25 words per note.')
-      return
-    }
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
-    persist({ ...prefs, notes: [...(prefs.notes ?? []), trimmed] })
-  }
-
-  const handleCancelAdd = () => setAddDraft(null)
 
   const handleEdit = (row: PreferenceRow) => {
     setEditingRow(row)
@@ -151,17 +149,11 @@ export default function PreferencesScreen() {
     return words.slice(0, max).join(' ')
   }
 
-  const onAddDraftChange = (text: string) => {
-    const limited = limitWords(text, MAX_WORDS)
-    setAddDraft(limited)
-  }
-
   const onEditDraftChange = (text: string) => {
     const limited = limitWords(text, MAX_WORDS)
     setEditDraft(limited)
   }
 
-  const addWords = addDraft != null ? wordCount(addDraft) : 0
   const editWords = editingRow != null ? wordCount(editDraft) : 0
   const rowId = (row: PreferenceRow) => (row.kind === 'answer' ? row.key : `note-${row.index}`)
 
@@ -179,8 +171,14 @@ export default function PreferencesScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
-          <Text className="text-3xl font-extrabold tracking-tighter text-black mb-2">Preferences</Text>
-          <Text className="text-sm text-black/55 mb-6 leading-5">
+          <Text className="text-3xl font-extrabold tracking-tighter text-black mb-6">Personalization</Text>
+
+          {/* Preferences toggle */}
+          <View className="w-full flex-row items-center rounded-2xl bg-white pl-4 pr-3 py-3" style={CARD_SHADOW}>
+            <Text className="flex-1 text-lg font-medium text-black">Preferences</Text>
+            <Switch value={personalized} onValueChange={handleTogglePersonalized} trackColor={{ true: '#6CD401' }} />
+          </View>
+          <Text className="text-sm text-black/45 leading-5 px-4 mt-2 mb-6">
             Your preferences will apply to all conversations.
           </Text>
 
@@ -188,17 +186,6 @@ export default function PreferencesScreen() {
             <ActivityIndicator size="small" className="py-4" />
           ) : (
             <>
-              <View className="flex-row items-center justify-end mb-2">
-                <TouchableOpacity
-                  onPress={handleAdd}
-                  disabled={rows.length >= MAX_CHIPS || saving}
-                  className="rounded-full bg-primary px-4 py-2"
-                  style={{ opacity: rows.length >= MAX_CHIPS || saving ? 0.5 : 1 }}
-                >
-                  <Text className="text-white font-semibold">Add</Text>
-                </TouchableOpacity>
-              </View>
-
               <View className="gap-3">
                 {rows.map((row) => {
                   const isStructured = row.label != null
@@ -236,13 +223,7 @@ export default function PreferencesScreen() {
                     <View
                       key={`row-${rowId(row)}`}
                       className="w-full flex-row items-start rounded-2xl bg-white pl-4 pr-2 py-3 gap-2"
-                      style={{
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.06,
-                        shadowRadius: 9,
-                        elevation: 2,
-                      }}
+                      style={CARD_SHADOW}
                     >
                       <View className="flex-1 min-w-0 pr-1">
                         {row.label ? (
@@ -256,43 +237,11 @@ export default function PreferencesScreen() {
                     </View>
                   )
                 })}
-
-                {addDraft != null && (
-                  <View className="w-full rounded-2xl bg-[#F7F7F7] p-4">
-                    <Text className="text-xs text-black/45 mb-2">Custom note</Text>
-                    <TextInput
-                      value={addDraft}
-                      onChangeText={onAddDraftChange}
-                      placeholder="Anything else we should remember (max 25 words)"
-                      placeholderTextColor="#9CA3AF"
-                      className="text-base text-black min-h-[44px]"
-                      multiline
-                      autoFocus
-                    />
-                    <Text className="text-xs text-black/50 mt-1">
-                      {addWords}/{MAX_WORDS} words
-                      {addWords >= MAX_WORDS && ' — Maximum 25 words per preference'}
-                    </Text>
-                    <View className="flex-row gap-2 mt-2">
-                      <TouchableOpacity
-                        onPress={handleSaveNew}
-                        disabled={!addDraft.trim() || addWords > MAX_WORDS}
-                        className="bg-primary rounded-full px-3 py-1.5"
-                        style={{ opacity: !addDraft.trim() || addWords > MAX_WORDS ? 0.5 : 1 }}
-                      >
-                        <Text className="text-white text-sm font-medium">Add</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={handleCancelAdd} className="bg-black/10 rounded-full px-3 py-1.5">
-                        <Text className="text-black text-sm">Cancel</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
               </View>
 
-              {rows.length === 0 && addDraft == null && !loading && (
+              {rows.length === 0 && (
                 <Text className="text-base text-black/40 mt-2">
-                  No preferences yet. Complete onboarding or tap Add for a custom note.
+                  No preferences yet. Complete onboarding to add some.
                 </Text>
               )}
             </>

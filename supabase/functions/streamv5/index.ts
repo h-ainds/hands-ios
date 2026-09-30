@@ -1,6 +1,7 @@
 import "@supabase/functions-js/edge-runtime"
 import { createClient } from "@supabase/supabase-js"
-import { SYSTEM_PROMPT, TOOLS } from "./agent.ts"
+import { SYSTEM_PROMPT, TOOLS, personalizedInstructions } from "./agent.ts"
+import { loadPreferences } from "./preferences.ts"
 import { deduplicateByRecipeId } from "./search.ts"
 import type { SearchRow, LabelResult, DeduplicateResult } from "./search.ts"
 import type { GetRecipeDetailsOutput, ServerEvent } from "../../../types/chat.ts"
@@ -196,6 +197,7 @@ async function* readSSEData(body: ReadableStream<Uint8Array>): AsyncGenerator<un
 // delta with a paragraph break — otherwise the rounds glue together ("…Frittata.Here…").
 async function streamRound(
   input: unknown[],
+  instructions: string,
   apiKey: string,
   emit: (event: ServerEvent) => void,
   separateFromPrior: boolean,
@@ -203,7 +205,7 @@ async function streamRound(
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, instructions: SYSTEM_PROMPT, input, tools: TOOLS, store: false, stream: true }),
+    body: JSON.stringify({ model: MODEL, instructions, input, tools: TOOLS, store: false, stream: true }),
   })
   if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 300)}`)
   if (!res.body) throw new Error("OpenAI response has no body")
@@ -272,7 +274,13 @@ Deno.serve(async (req) => {
 
   // SupabaseSession is the only state mechanism. Reject previous_response_id at
   // the boundary so mixing the two is impossible by construction.
-  let reqBody: { message?: string; conversation_id?: string; attachment_id?: string; previous_response_id?: unknown }
+  let reqBody: {
+    message?: string
+    conversation_id?: string
+    attachment_id?: string
+    personalize?: unknown
+    previous_response_id?: unknown
+  }
   try { reqBody = await req.json() } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -300,6 +308,9 @@ Deno.serve(async (req) => {
   const supabase       = createClient(supabaseUrl, supabaseKey)
   const conversationId = conversation_id
   const session        = new SupabaseSession(conversationId, supabase)
+  // Only an explicit true personalizes; older clients never send the flag.
+  const personalize    = reqBody.personalize === true
+  const accessToken    = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? ""
 
   const body = new ReadableStream({
     async start(controller) {
@@ -308,7 +319,13 @@ Deno.serve(async (req) => {
 
       try {
         // Load prior turns from the DB; new items accumulate from priorItems.length onward.
-        const priorItems = await session.getItems()
+        // Preferences go in this turn's instructions only — never into the session log.
+        const [priorItems, preferences] = await Promise.all([
+          session.getItems(),
+          personalize ? loadPreferences(supabase, accessToken) : Promise.resolve(null),
+        ])
+        const instructions = preferences ? personalizedInstructions(preferences) : SYSTEM_PROMPT
+        console.log("[personalize]", JSON.stringify({ requested: personalize, applied: preferences !== null }))
 
         // Native multimodal: inline the image as an input_image part for THIS turn
         // only. userMsgForStore (text-only) is what we persist, so later turns
@@ -333,7 +350,7 @@ Deno.serve(async (req) => {
 
         for (let round = 0; round < MAX_ROUNDS; round++) {
           // Text deltas and tool.call.started events are emitted inside streamRound.
-          const output = await streamRound(input, openAiKey, emit, textEmitted)
+          const output = await streamRound(input, instructions, openAiKey, emit, textEmitted)
           const roundHasText = hasText(output)
           textEmitted ||= roundHasText
           const toolCalls = output.filter((o) => o.type === "function_call")

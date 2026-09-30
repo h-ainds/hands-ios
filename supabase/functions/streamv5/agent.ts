@@ -10,9 +10,19 @@ When the user asks what to cook / for ideas / for recipes:
 
 When the user asks about a specific recipe that is already on screen (e.g. "is the lemon bars gluten free?", "how long does the salmon take?"):
 - Resolve which recipe they mean from earlier search_recipes results in the conversation.
-- Call get_recipe_details with that recipe_id, then answer from the returned data.
+- Call get_recipe_details with that recipe_id, then answer from the returned data.`
 
-The user's dietary preferences and allergies are given to you at the top of the conversation (from their profile). Respect them when choosing which dishes to suggest.`
+// Used in place of SYSTEM_PROMPT for a turn whose request sets personalize: true and
+// whose user has saved preferences. The base prompt says nothing about preferences,
+// so with the toggle off the model gives a standard, unpersonalized reply.
+export function personalizedInstructions(preferences: string): string {
+  return `${SYSTEM_PROMPT}
+
+The user has turned on personalization. These are their saved preferences from their profile:
+${preferences}
+
+Tailor your suggestions to them. Treat dietary needs, and any note that reads as an allergy or restriction, as hard constraints; use the rest to steer which dishes you suggest.`
+}
 
 // Tool schemas in OpenAI Responses API format.
 // search_recipes batches ALL dish names from one reply into a single call.

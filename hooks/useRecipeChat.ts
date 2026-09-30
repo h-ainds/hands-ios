@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { finalizeAttachment } from "@/lib/attachments";
+import { getPreferencesEnabled } from "@/lib/personalization";
 import type { RecipeCard, ServerEvent } from "@/types/chat";
 import { chatReducer, initialChatState } from "@/hooks/chatReducer";
 import type { ChatAction } from "@/hooks/chatReducer";
@@ -246,9 +247,11 @@ export function useRecipeChat(
           : userMessage;
 
         // Only a reference travels in the payload — the bytes are already in Storage.
+        // The personalize flag is read per send, so flipping it applies to the next message.
         const requestBody: Record<string, unknown> = {
           message: promptForModel,
           conversation_id: activeConversationId,
+          personalize: await getPreferencesEnabled(),
         };
         if (attachmentId) requestBody.attachment_id = attachmentId;
 

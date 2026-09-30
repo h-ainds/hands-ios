@@ -367,7 +367,7 @@ export async function createUserProfile({
   }
 }
 
-// Create or replace a user's keyed preferences (onboarding + Preferences screen)
+// Create or replace a user's keyed preferences (onboarding + Personalization screen)
 export async function saveUserPreferences(userId: string, preferences: UserPreferences): Promise<void> {
   const { error } = await supabase.from('user_preferences').upsert({ id: userId, preferences })
   if (error) throw new Error((error as AuthError).message || 'Failed to save preferences')

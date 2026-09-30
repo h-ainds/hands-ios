@@ -143,13 +143,13 @@ export default function ProfileScreen() {
           <Text className="text-base text-secondary-muted">{email}</Text>
         </View>
 
-        {/* Preferences Button */}
+        {/* Personalization Button */}
         <Pressable
-          onPress={() => router.push('/preferences')}
+          onPress={() => router.push('/personalization')}
           className="bg-white rounded-xl p-4 mb-2 flex-row items-center active:opacity-70"
         >
           <SymbolView name="brain.head.profile" size={20} weight="semibold" tintColor="#000" />
-          <Text className="text-black ml-3 text-xl font-bold flex-1">Preferences</Text>
+          <Text className="text-black ml-3 text-xl font-bold flex-1">Personalization</Text>
           <SymbolView name="chevron.right" size={16} weight="semibold" tintColor="#9F9F9F" />
         </Pressable>
 

@@ -43,6 +43,11 @@ export interface ChatRequest {
    * public.attachments table, bound to this message.
    */
   attachment_id?: string
+  /**
+   * Device-local Preferences toggle (lib/personalization.ts). When true, the edge fn adds the
+   * caller's user_preferences to this turn's instructions; absent/false → unpersonalized reply.
+   */
+  personalize?: boolean
 }
 
 // ─── Tool I/O ──────────────────────────────────────────────────────────────────

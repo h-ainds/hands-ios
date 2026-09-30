@@ -227,7 +227,7 @@ export default function OnboardingProfileScreen() {
     router.back()
   }
 
-  // Success step: show saved answers (same rows as the Preferences screen)
+  // Success step: show saved answers (same rows as the Personalization screen)
   if (showSuccessStep) {
     const savedRows = preferenceRows(savedPreferences)
     return (
@@ -241,7 +241,7 @@ export default function OnboardingProfileScreen() {
             </Text>
             <Text className="text-base tracking-tighter text-secondary-placeholder mt-2">
               {savedRows.length > 0
-                ? "Here's what we saved. Edit anytime in Preferences."
+                ? "Here's what we saved. Edit anytime in Personalization."
                 : 'Welcome to Hands. Get started below.'}
             </Text>
           </View>
