@@ -2,9 +2,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Supabase project ID**: `lxueztdlrxoystjehjay` — use this as the `project_id` for all Supabase MCP tool calls (SQL queries, migrations, advisors) so you always target the right database.
-
 **Hands** — an Expo / React Native (iOS-first) app: an AI personal chef. Users chat for recipe ideas and get interactive recipe cards streamed inline. Backend is Supabase (Postgres + Auth + Edge Functions); the AI runs in a Deno edge function that calls the OpenAI Responses API with tool-calling over a hybrid vector+keyword recipe search.
+
+**Supabase project ID**: `lxueztdlrxoystjehjay` — use this as the `project_id` for all Supabase MCP tool calls (SQL queries, migrations, advisors) so you always target the right database.
 
 ## Commands
 
@@ -35,7 +35,9 @@ Two app variants exist via `APP_VARIANT=development` (see `app.config.js`, `eas.
 ### Client (React Native + Expo Router)
 - **Routing** is file-based via `expo-router` with typed routes. `app/_layout.tsx` is the root: it wraps everything in `AuthProvider → FavoritesProvider` and gates navigation on auth state (`PUBLIC_ROUTES` list controls what unauthenticated users can reach). `app/(tabs)/` is the authenticated shell (Home / center camera button that routes to `/ask` / You).
 - **Import alias**: `@/*` maps to repo root (`tsconfig.json`). `supabase/functions` is excluded from the app's tsconfig — edge functions are a separate Deno project.
-- **Styling**: NativeWind (Tailwind) via `className`. Brand palette lives in `tailwind.config.js` (`primary` = `#6CD401` green) and `constants/Colors.ts`. `app/global.css` is imported once in the root layout.
+- **Styling**: 
+1. NativeWind (Tailwind) via `className`. Brand palette lives in `tailwind.config.js` (`primary` = `#6CD401` green) and `constants/Colors.ts`. `app/global.css` is imported once in the root layout.
+2. Light mode only: The entire app always uses light mode. All pages use a white background (#FFFFFF), so do not build dark-mode variants, theme switching, or dynamic background components.
 - **State**: React Context for cross-cutting concerns (`context/AuthContext`, `FavoritesContext`); data fetching via hooks in `hooks/` (`useRecipes`, `useFavorites`, `useRecipeChat`, `useUsageTracking`). `useUsageTracking` counts per-day messages/images; its caps are currently off (`LIMITS_ENABLED = false`) until subscriptions return.
 - **Supabase client** (`lib/supabase/client.ts`): a single shared client. Session storage adapter is platform-aware — `expo-secure-store` on native, `localStorage` on web. Reads `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`.
 
