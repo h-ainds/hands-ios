@@ -176,7 +176,12 @@ export default function PersonalizationScreen() {
           {/* Preferences toggle */}
           <View className="w-full flex-row items-center rounded-2xl bg-white pl-4 pr-3 py-3" style={CARD_SHADOW}>
             <Text className="flex-1 text-lg font-medium text-black">Preferences</Text>
-            <Switch value={personalized} onValueChange={handleTogglePersonalized} trackColor={{ true: '#6CD401' }} />
+            <Switch
+              value={personalized}
+              onValueChange={handleTogglePersonalized}
+              trackColor={{ false: '#B2B2B2', true: '#6CD401' }}
+              ios_backgroundColor="#B2B2B2"
+            />
           </View>
           <Text className="text-sm text-black/45 leading-5 px-4 mt-2 mb-6">
             Your preferences will apply to all conversations.
